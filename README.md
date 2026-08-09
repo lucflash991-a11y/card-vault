@@ -1,4 +1,4 @@
-# Card Vault v1.4.1
+# Card Vault v1.7.0 — Mega Update
 
 Major rebuild of the Card Vault PWA.
 
@@ -217,3 +217,36 @@ Cross-device cloud thumbnails, Google accounts, Firestore sync, dark mode, and t
 - Start and end date labels.
 - Separate Start Value / Current Value / Change summary row.
 - Better dark-mode presentation.
+
+
+## v1.7.0 Mega Update
+
+Combines the planned v1.5, v1.6, and v1.7 releases.
+
+### v1.5 — Portfolio Analytics
+- Biggest gainer and biggest loser based on saved card price history
+- Top players by collection value
+- Top sets by collection value
+- Existing invested / value / profit / average metrics retained
+- Existing Vault Value History retained
+
+### v1.6 — Scanner 2.0
+- Single-card and Batch Mode
+- Batch session counter and rapid save → next-card flow
+- Front/back photo-quality analysis for darkness, brightness/glare risk, low detail, and framing
+- Expanded AI checks for slabs and visible grades
+- Stronger prompt for exact parallels and variations
+- Existing one-call identification + rough value estimate and scan caching retained
+
+### v1.7 — Search & Organization
+- Search includes tags and collection names
+- Raw-only / graded-only filter
+- Favorites-only filter
+- Custom collection filter
+- Sort by highest profit
+- Add custom Collection field to any card
+- Add comma-separated Tags
+- Favorites remain visible throughout the Vault
+- Full card detail editing retained
+
+This build keeps Google accounts, Firestore sync, cross-device thumbnails, dark mode, AI efficiency, pricing cache, live price refresh, card details, and all fixes from v1.4.1.

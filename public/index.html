@@ -108,6 +108,37 @@
           </div>
           <div id="sportBreakdown" class="sport-breakdown"><p class="muted-copy">Add cards to see your collection mix.</p></div>
         </section>
+        <section class="dashboard-panel">
+          <div class="dashboard-head">
+            <div><small>PERFORMANCE</small><h2>Top movers</h2></div>
+          </div>
+          <div class="mover-grid">
+            <div class="mover-column">
+              <span class="mover-label">BIGGEST GAINER</span>
+              <button id="topGainer" class="mover-card empty-mover" type="button">No price history yet</button>
+            </div>
+            <div class="mover-column">
+              <span class="mover-label">BIGGEST LOSER</span>
+              <button id="topLoser" class="mover-card empty-mover" type="button">No price history yet</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="dashboard-panel">
+          <div class="dashboard-head">
+            <div><small>VALUE BREAKDOWN</small><h2>Top players & sets</h2></div>
+          </div>
+          <div class="ranking-grid">
+            <div>
+              <span class="ranking-title">Players</span>
+              <div id="topPlayers" class="ranking-list"></div>
+            </div>
+            <div>
+              <span class="ranking-title">Sets</span>
+              <div id="topSets" class="ranking-list"></div>
+            </div>
+          </div>
+        </section>
 
         <button class="scan-cta" data-go="scan" type="button">
           <span class="scan-spark">✦</span>
@@ -145,12 +176,28 @@
         <div class="vault-controls">
           <label class="search-box">
             <span>⌕</span>
-            <input id="searchBox" type="search" placeholder="Search player, set, team">
+            <input id="searchBox" type="search" placeholder="Search player, set, team, tag">
           </label>
           <select id="sortFilter" class="select-control" aria-label="Sort cards">
             <option value="newest">Newest</option>
             <option value="value">Highest value</option>
+            <option value="profit">Highest profit</option>
             <option value="player">Player A–Z</option>
+          </select>
+        </div>
+
+        <div class="advanced-filters">
+          <select id="gradeFilter" class="select-control">
+            <option value="">Raw + graded</option>
+            <option value="raw">Raw only</option>
+            <option value="graded">Graded only</option>
+          </select>
+          <select id="favoriteFilter" class="select-control">
+            <option value="">All cards</option>
+            <option value="favorite">Favorites</option>
+          </select>
+          <select id="collectionFilter" class="select-control">
+            <option value="">All collections</option>
           </select>
         </div>
 
@@ -176,8 +223,18 @@
         </header>
 
         <div class="scan-copy">
-          <h2>Two photos. One match.</h2>
-          <p>Keep the whole card visible, shoot straight on, and avoid glare for the best result.</p>
+          <h2>Scanner 2.0</h2>
+          <p>Card Vault checks framing, glare, sharpness, card identity, parallel details, serial numbers, and visible grading slabs.</p>
+        </div>
+
+        <div class="scan-mode-picker">
+          <button class="scan-mode active" data-scan-mode="single" type="button">Single card</button>
+          <button class="scan-mode" data-scan-mode="batch" type="button">Batch mode</button>
+        </div>
+
+        <div id="batchStatus" class="batch-status hidden">
+          <div><small>BATCH SESSION</small><strong id="batchCount">0 cards</strong></div>
+          <button id="finishBatchBtn" type="button">Finish batch</button>
         </div>
 
         <div class="photo-stack">
@@ -206,7 +263,13 @@
 
         <div class="ai-tags">
           <span>AI checks</span>
-          <b>Player</b><b>Year</b><b>Set</b><b>Card #</b><b>Parallel</b><b>Serial</b>
+          <b>Player</b><b>Year</b><b>Set</b><b>Card #</b><b>Parallel</b><b>Serial</b><b>Slab</b><b>Grade</b>
+        </div>
+
+        <div id="photoQuality" class="photo-quality hidden">
+          <div><span>Front</span><b id="frontQuality">Checking…</b></div>
+          <div><span>Back</span><b id="backQuality">Checking…</b></div>
+          <p id="qualityAdvice">Card Vault will warn you if either image looks too dark, blurry, or poorly framed.</p>
         </div>
 
         <button id="analyzeBtn" class="primary-button" disabled type="button">
@@ -344,6 +407,12 @@
           <p id="detailPriceHistoryText">No price history yet.</p>
         </section>
 
+        <div class="detail-section-title"><small>ORGANIZATION</small><h2>Collections & tags</h2></div>
+        <div class="form-sheet">
+          <div class="form-line"><label for="dCollection">Collection</label><input id="dCollection" placeholder="Lions PC, Rookies, For Sale..."></div>
+          <div class="form-line"><label for="dTags">Tags</label><input id="dTags" placeholder="rookie, auto, numbered"></div>
+        </div>
+
         <div class="detail-section-title"><small>PERSONAL</small><h2>Notes</h2></div>
         <textarea id="dNotes" class="notes-field" rows="4" placeholder="Why you bought it, where you got it, anything you want to remember..."></textarea>
 
@@ -387,7 +456,7 @@
         </div>
 
         <p class="settings-footnote">When signed in, Card Vault can sync your vault through Firebase. Guest mode stays on this device.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.4.1</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.7.0</p>
       </section>
     </main>
 
@@ -401,6 +470,6 @@
 
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=141"></script>
+  <script type="module" src="/app.js?v=170"></script>
 </body>
 </html>

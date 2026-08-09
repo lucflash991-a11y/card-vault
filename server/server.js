@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"1.4.1"});
+  res.json({version:"1.7.0"});
 });
 
 app.use((req,res,next)=>{
@@ -269,7 +269,12 @@ The two images are the FRONT and BACK of the SAME physical sports card.
 
 Use visible evidence only: player name, team, manufacturer, logos, copyright text,
 set name, year, card number, rookie marks, serial numbering, foil/color/pattern,
-borders, inscriptions and design.
+borders, inscriptions, card design, grading slab label, grading company, and visible slab grade.
+
+Be especially careful about parallels and variations. Compare border color, foil treatment,
+pattern, serial numbering, logos, card-number placement, and back-design details before
+claiming an exact match. If a slab is visible, report the grading company/grade in evidence
+and use the visible grade. If the card is raw, grade must remain "Raw".
 
 Return one PRIMARY exact-card match and up to 3 useful ALTERNATES.
 Confidence is 0-100 confidence in the EXACT card including parallel/variation.
@@ -336,5 +341,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v1.4.1 running on port ${port}`);
+  console.log(`Card Vault v1.7.0 running on port ${port}`);
 });
