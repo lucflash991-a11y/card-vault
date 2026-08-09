@@ -1,4 +1,4 @@
-# Card Vault v1.9.1 — Selling Mode
+# Card Vault v2.0.0 — Card Vault Platform
 
 Major rebuild of the Card Vault PWA.
 
@@ -275,3 +275,22 @@ Listing Studio on every card with suggested list price, profit-vs-paid, listing 
 - Removed Wantlist tab, modal, local storage, filters, and code.
 - Selling Mode / Listing Studio remains intact.
 - Existing AI endurance, Scanner 2.0, portfolio analytics, filters, tags, collections, pricing, cloud sync, and card details remain intact.
+
+
+## v2.0.0 Card Vault Platform
+- Home stays clean and personal.
+- New Discover tab for the platform/social side.
+- Public collector profiles.
+- Username, display name, bio, favorite team/player, profile photo.
+- Public/private profile and vault controls.
+- Choose up to 6 Showcase cards.
+- Per-card Public toggle.
+- Shared cards appear in Discover.
+- Copy share link.
+- Achievement badges.
+- Personal activity feed.
+- Public collector profile viewer.
+- Existing Scanner 2.0, Batch Mode, Selling Mode, analytics, tags, collections, pricing, AI endurance and cloud sync remain.
+
+### Firebase
+Publish the included `firestore.rules` so `publicProfiles` and `publicCards` work with proper owner permissions.

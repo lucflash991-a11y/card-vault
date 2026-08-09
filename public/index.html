@@ -413,6 +413,13 @@
           <div class="form-line"><label for="dTags">Tags</label><input id="dTags" placeholder="rookie, auto, numbered"></div>
         </div>
 
+        <div class="detail-section-title"><small>PLATFORM</small><h2>Share this card</h2></div>
+        <section class="share-card-panel">
+          <div><strong>Public card</strong><p>Show this card on your public profile and in Discover.</p></div>
+          <label class="switch-control"><input id="cardPublicToggle" type="checkbox"><span></span></label>
+        </section>
+        <button id="copyShareLinkBtn" class="secondary-button" type="button">Copy share link</button>
+
         <div class="detail-section-title"><small>SELLING</small><h2>Listing Studio</h2></div>
         <section class="selling-card"><div class="selling-top"><div><span>Suggested list price</span><strong id="sellSuggestedPrice">$0</strong></div><span id="sellMarginBadge" class="sell-margin neutral">No purchase price</span></div><div class="selling-actions-grid"><button id="copyListingBtn" type="button">Copy full listing</button><button id="copyTitleBtn" type="button">Copy title</button></div><div class="listing-preview"><span>LISTING TITLE</span><strong id="listingTitle">Card listing</strong></div><div class="listing-preview"><span>DESCRIPTION</span><p id="listingDescription">Open a card to generate a listing draft.</p></div><div class="selling-actions-grid"><button id="copyMarketplaceBtn" type="button">Facebook draft</button><button id="copyEbayBtn" type="button">eBay draft</button></div></section>
 
@@ -422,18 +429,77 @@
         <button id="saveDetailBtn" class="primary-button" type="button"><span>Save changes</span><span>✓</span></button>
       </section>
 
-      <section id="profile" class="screen">
+      <section id="discover" class="screen">
         <header class="page-header">
           <button class="back-circle" data-go="home" type="button">‹</button>
-          <div><small>ACCOUNT</small><h1>Profile</h1></div>
+          <div><small>CARD VAULT PLATFORM</small><h1>Discover</h1></div>
           <div class="header-spacer"></div>
         </header>
 
-        <section class="profile-hero">
-          <div id="profileAvatar" class="profile-avatar">C</div>
+        <section class="discover-intro">
+          <small>COMMUNITY</small>
+          <h2>Collectors, not clutter.</h2>
+          <p>Discover is separate from Home, so your dashboard stays focused on your own collection.</p>
+        </section>
+
+        <label class="search-box discover-search">
+          <span>⌕</span>
+          <input id="discoverSearch" type="search" placeholder="Search collectors, players, sets">
+        </label>
+
+        <section class="discover-section">
+          <div class="settings-title"><div><small>COLLECTORS</small><h2>Public profiles</h2></div></div>
+          <div id="discoverProfiles" class="discover-profile-list"></div>
+          <p id="discoverProfilesEmpty" class="muted-copy">No public collectors found yet.</p>
+        </section>
+
+        <section class="discover-section">
+          <div class="settings-title"><div><small>SHARED CARDS</small><h2>Recently shared</h2></div></div>
+          <div id="discoverCards" class="discover-card-grid"></div>
+          <p id="discoverCardsEmpty" class="muted-copy">No public cards found yet.</p>
+        </section>
+      </section>
+
+      <section id="publicProfile" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="discover" type="button">‹</button>
+          <div><small>COLLECTOR</small><h1>Public Profile</h1></div>
+          <div class="header-spacer"></div>
+        </header>
+        <section class="profile-hero platform-profile">
+          <div id="publicAvatar" class="profile-avatar profile-avatar-xl">C</div>
+          <h2 id="publicName">Collector</h2>
+          <p id="publicHandle">@collector</p>
+          <p id="publicBio" class="profile-bio"></p>
+          <div class="profile-meta-row"><span id="publicFavorite">Favorite: —</span></div>
+        </section>
+        <div class="profile-stats">
+          <div><strong id="publicCardCount">0</strong><span>Cards</span></div>
+          <div><strong id="publicVaultValue">$0</strong><span>Value</span></div>
+          <div><strong id="publicAchievementCount">0</strong><span>Badges</span></div>
+        </div>
+        <section class="profile-platform-section">
+          <div class="settings-title"><div><small>SHOWCASE</small><h2>Featured cards</h2></div></div>
+          <div id="publicShowcase" class="showcase-grid"></div>
+        </section>
+      </section>
+
+      <section id="profile" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="home" type="button">‹</button>
+          <div><small>COLLECTOR PROFILE</small><h1>Profile</h1></div>
+          <button id="editProfileBtn" class="back-circle" type="button">✎</button>
+        </header>
+
+        <section class="profile-hero platform-profile">
+          <div id="profileAvatar" class="profile-avatar profile-avatar-xl">C</div>
           <h2 id="profileName">Collector</h2>
-          <p id="profileEmail">Guest account</p>
-          <span id="accountModeBadge" class="account-badge">GUEST</span>
+          <p id="profileHandle">@collector</p>
+          <p id="profileBio" class="profile-bio">Building my Card Vault.</p>
+          <div class="profile-meta-row">
+            <span id="profileFavorite">Favorite: —</span>
+            <span id="profilePrivacyBadge" class="account-badge">PRIVATE</span>
+          </div>
         </section>
 
         <div class="profile-stats">
@@ -442,8 +508,27 @@
           <div><strong id="profileScans">0</strong><span>Scans</span></div>
         </div>
 
+        <section class="profile-platform-section">
+          <div class="settings-title">
+            <div><small>YOUR SHELF</small><h2>Showcase</h2></div>
+            <button id="manageShowcaseBtn" class="text-button" type="button">Manage</button>
+          </div>
+          <div id="profileShowcase" class="showcase-grid"></div>
+          <p id="showcaseEmpty" class="muted-copy">Pick up to 6 cards from your Vault to feature here.</p>
+        </section>
+
+        <section class="profile-platform-section">
+          <div class="settings-title"><div><small>PROGRESS</small><h2>Achievements</h2></div></div>
+          <div id="achievementGrid" class="achievement-grid"></div>
+        </section>
+
+        <section class="profile-platform-section">
+          <div class="settings-title"><div><small>RECENT</small><h2>Activity</h2></div></div>
+          <div id="activityFeed" class="activity-feed"></div>
+        </section>
+
         <div class="settings-section">
-          <div class="settings-title"><small>APPEARANCE</small><h2>Theme</h2></div>
+          <div class="settings-title"><div><small>APPEARANCE</small><h2>Theme</h2></div></div>
           <div class="theme-picker">
             <button type="button" data-theme-choice="light">Light</button>
             <button type="button" data-theme-choice="dark">Dark</button>
@@ -458,8 +543,8 @@
           <button id="clearDataBtn" class="danger-row" type="button">Clear local collection</button>
         </div>
 
-        <p class="settings-footnote">When signed in, Card Vault can sync your vault through Firebase. Guest mode stays on this device.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.9.1</p>
+        <p class="settings-footnote">Platform features live in Discover. Your Home stays personal and clean.</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v2.0.0</p>
       </section>
     </main>
 
@@ -467,12 +552,44 @@
       <button class="tab active" data-go="home" type="button"><span>⌂</span><small>Home</small></button>
       <button class="tab" data-go="vault" type="button"><span>▦</span><small>Vault</small></button>
       <button class="scan-tab" data-go="scan" type="button" aria-label="Scan a card"><span>✦</span></button>
+      <button class="tab" data-go="discover" type="button"><span>◎</span><small>Discover</small></button>
       <button class="tab" data-go="profile" type="button"><span>◉</span><small>Profile</small></button>
     </nav>
   </div>
 
+  <section id="profileEditModal" class="sheet-modal hidden" aria-hidden="true">
+    <div class="sheet-backdrop" data-close-profile-edit></div>
+    <div class="sheet-card">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-title-row"><div><small>PROFILE</small><h2>Edit collector profile</h2></div><button class="back-circle" data-close-profile-edit type="button">×</button></div>
+      <div class="profile-photo-editor">
+        <label id="profilePhotoLabel" class="profile-avatar profile-avatar-xl photo-upload-avatar"><span id="profilePhotoInitial">C</span><input id="profilePhotoInput" type="file" accept="image/*"></label>
+        <p>Tap the avatar to choose a profile photo.</p>
+      </div>
+      <div class="form-sheet">
+        <div class="form-line"><label for="editDisplayName">Display name</label><input id="editDisplayName" maxlength="40"></div>
+        <div class="form-line"><label for="editUsername">Username</label><input id="editUsername" maxlength="24" autocapitalize="none"></div>
+        <div class="form-line"><label for="editFavorite">Favorite team / player</label><input id="editFavorite" maxlength="50"></div>
+        <div class="form-line"><label for="editBio">Bio</label><textarea id="editBio" rows="3" maxlength="160"></textarea></div>
+        <div class="form-line"><label for="editProfilePrivacy">Profile</label><select id="editProfilePrivacy"><option value="private">Private</option><option value="public">Public</option></select></div>
+        <div class="form-line"><label for="editVaultPrivacy">Vault visibility</label><select id="editVaultPrivacy"><option value="private">Private</option><option value="public">Public showcase/cards</option></select></div>
+      </div>
+      <button id="saveProfileBtn" class="primary-button" type="button"><span>Save profile</span><span>✓</span></button>
+    </div>
+  </section>
+
+  <section id="showcaseModal" class="sheet-modal hidden" aria-hidden="true">
+    <div class="sheet-backdrop" data-close-showcase></div>
+    <div class="sheet-card">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-title-row"><div><small>SHOWCASE</small><h2>Pick up to 6 cards</h2></div><button class="back-circle" data-close-showcase type="button">×</button></div>
+      <div id="showcasePicker" class="showcase-picker"></div>
+      <button id="saveShowcaseBtn" class="primary-button" type="button"><span>Save Showcase</span><span>✓</span></button>
+    </div>
+  </section>
+
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=191"></script>
+  <script type="module" src="/app.js?v=200"></script>
 </body>
 </html>
