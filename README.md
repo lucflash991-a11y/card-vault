@@ -1,4 +1,4 @@
-# Card Vault v1.0.2
+# Card Vault v1.0.4
 
 Major rebuild of the Card Vault PWA.
 
@@ -89,3 +89,20 @@ Apple sign-in cannot simply be activated by frontend code. Apple requires the we
 - Firestore permission/network errors now show a sync warning instead of acting like login failed.
 - Firestore live listener starts before guest-card migration.
 - Service worker cache bumped to force the updated authentication code onto installed copies.
+
+
+## v1.0.3 iPhone Safari Google auth fix
+- Removed `signInWithRedirect()` completely.
+- Google authentication is now popup-only.
+- Fixes Firebase "Unable to process request due to missing initial state" caused by storage-partitioned Safari environments.
+- If Safari blocks the popup, Card Vault now reports that instead of redirecting to a broken Firebase auth page.
+- Removed stale redirect-result recovery code.
+- Service worker cache bumped.
+
+
+## v1.0.4 Safari same-site authentication fix
+- Proxies Firebase Auth helper routes through the Render Card Vault domain.
+- `/api/config` now reports the current Card Vault host as Firebase `authDomain`.
+- Removes the Safari cross-site storage dependency on `firebaseapp.com`.
+- Keeps Google popup authentication.
+- Service worker cache bumped.
