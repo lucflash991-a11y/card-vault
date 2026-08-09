@@ -5,6 +5,25 @@ const SCAN_KEY = "cardvault.v10.scans";
 const THEME_KEY = "cardvault.v10.theme";
 const GUEST_KEY = "cardvault.v10.guest";
 const MIGRATION_KEY = "cardvault.v10.migrated";
+const IMAGE_CACHE_PREFIX = "cardvault.v106.image.";
+
+function saveLocalCardImages(card){
+  if(!card?.id)return;
+  try{
+    localStorage.setItem(IMAGE_CACHE_PREFIX+card.id,JSON.stringify({front:card.front||"",back:card.back||""}));
+  }catch(err){
+    console.warn("Could not cache card images locally:",err);
+  }
+}
+
+function getLocalCardImages(id){
+  try{return JSON.parse(localStorage.getItem(IMAGE_CACHE_PREFIX+id)||"{}")}catch{return {}}
+}
+
+function hydrateLocalImages(card){
+  const cached=getLocalCardImages(card.id);
+  return {...card,front:card.front||cached.front||"",back:card.back||cached.back||""};
+}
 
 const money = (n) => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(Number(n||0));
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
@@ -283,10 +302,59 @@ function renderDetailImage(c){
 $("showFrontBtn").addEventListener("click",()=>{detailSide="front";const c=cards.find(x=>x.id===currentDetailId);if(c)renderDetailImage(c)});
 $("showBackBtn").addEventListener("click",()=>{detailSide="back";const c=cards.find(x=>x.id===currentDetailId);if(c)renderDetailImage(c)});
 
+async function compactDataUrlForVault(dataUrl,maxSide=520,quality=.62){
+  if(!dataUrl || !dataUrl.startsWith("data:image/")) return dataUrl||"";
+  try{
+    const img=await loadImage(dataUrl);
+    const w0=img.naturalWidth||img.width;
+    const h0=img.naturalHeight||img.height;
+    const scale=Math.min(1,maxSide/Math.max(w0,h0));
+    const w=Math.max(1,Math.round(w0*scale));
+    const h=Math.max(1,Math.round(h0*scale));
+    const canvas=document.createElement("canvas");
+    canvas.width=w; canvas.height=h;
+    const ctx=canvas.getContext("2d",{alpha:false});
+    if(!ctx) return dataUrl;
+    ctx.drawImage(img,0,0,w,h);
+    return canvas.toDataURL("image/jpeg",quality);
+  }catch(err){
+    console.warn("Vault image compression failed:",err);
+    return dataUrl;
+  }
+}
+
+async function prepareCardForCloud(card){
+  const compact={...card};
+  compact.front=await compactDataUrlForVault(card.front,520,.62);
+  compact.back=await compactDataUrlForVault(card.back,520,.62);
+
+  // Firestore Native documents have a 1 MiB maximum size. Keep comfortable headroom.
+  let approx=new Blob([JSON.stringify(compact)]).size;
+  if(approx>850000){
+    compact.front=await compactDataUrlForVault(card.front,400,.52);
+    compact.back=await compactDataUrlForVault(card.back,400,.52);
+    approx=new Blob([JSON.stringify(compact)]).size;
+  }
+  if(approx>850000){
+    // Final safety fallback: retain front image and omit the back image from cloud storage.
+    // The card data still saves instead of failing entirely.
+    compact.back="";
+  }
+  return compact;
+}
+
 async function persistCard(card){
   card=normalizeCard(card);
   if(currentUser && firebase?.db){
-    await firebase.setDoc(firebase.doc(firebase.db,"users",currentUser.uid,"cards",card.id),card,{merge:true});
+    // Keep photos on this device. Firestore stores only portable card metadata.
+    // This avoids document-size/indexing problems entirely on the free tier.
+    saveLocalCardImages(card);
+    const cloudCard={...card,front:"",back:""};
+    await firebase.setDoc(
+      firebase.doc(firebase.db,"users",currentUser.uid,"cards",card.id),
+      cloudCard,
+      {merge:true}
+    );
   }else{
     const index=cards.findIndex(c=>c.id===card.id);
     if(index>=0)cards[index]=card;else cards.unshift(card);
@@ -459,8 +527,25 @@ $("addVaultBtn").addEventListener("click",async()=>{
     toast("Added to your Vault");
     resetScan();go("home");
   }catch(err){
-    toast("Could not save this card");
-    savingCard=false;$("addVaultBtn").disabled=false;$("saveCardLabel").textContent="Add to Vault";
+    console.error("Card save failed:",err);
+    const code=String(err?.code||"unknown");
+    const message=String(err?.message||"Unknown Firestore error");
+
+    $("analysisState").classList.remove("hidden");
+    $("analysisSpinner").classList.remove("ready");
+    $("analysisTitle").textContent=`SAVE ERROR: ${code}`;
+    $("analysisSub").textContent=message;
+
+    toast(`Save failed: ${code}`);
+    setTimeout(()=>alert(`CARD VAULT v1.0.7 SAVE ERROR
+
+Code: ${code}
+
+${message}`),100);
+
+    savingCard=false;
+    $("addVaultBtn").disabled=false;
+    $("saveCardLabel").textContent="Add to Vault";
   }
 });
 
@@ -611,7 +696,7 @@ async function startCloudCards(){
   const col=firebase.collection(firebase.db,"users",currentUser.uid,"cards");
   await migrateLocalToCloud(col);
   unsubscribeCards=firebase.onSnapshot(col,snap=>{
-    cards=dedupeCards(snap.docs.map(d=>normalizeCard({id:d.id,...d.data()})));
+    cards=dedupeCards(snap.docs.map(d=>hydrateLocalImages(normalizeCard({id:d.id,...d.data()}))));
     renderAll();
   },()=>toast("Cloud sync paused"));
 }
@@ -645,10 +730,20 @@ async function health(){
   }catch{$("aiMode").textContent="Offline"}
 }
 
-if("serviceWorker"in navigator){
-  let refreshed=false;
-  navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!refreshed){refreshed=true;location.reload()}});
-  addEventListener("load",()=>navigator.serviceWorker.register("/service-worker.js").catch(()=>{}));
+if("serviceWorker" in navigator){
+  addEventListener("load",async()=>{
+    try{
+      const regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+      if("caches" in window){
+        const keys=await caches.keys();
+        await Promise.all(keys.map(k=>caches.delete(k)));
+      }
+      console.log("Card Vault v1.0.7: old PWA caches cleared");
+    }catch(err){
+      console.warn("Could not clear old PWA cache:",err);
+    }
+  });
 }
 
 cards=readLocalCards();

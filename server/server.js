@@ -9,8 +9,75 @@ app.use((req,res,next)=>{
   res.setHeader("Referrer-Policy","strict-origin-when-cross-origin");
   next();
 });
+
+// Firebase Auth same-site helper proxy.
+// Safari blocks the default cross-site firebaseapp.com helper storage.
+// Keep these routes BEFORE express.json() so POST bodies can be proxied intact.
+async function proxyFirebaseAuth(req,res){
+  try{
+    const projectId=process.env.FIREBASE_PROJECT_ID || "card-vault-1de81";
+    const targetBase=`https://${projectId}.firebaseapp.com`;
+    const targetUrl=targetBase + req.originalUrl;
+
+    const headers={};
+    for(const [key,value] of Object.entries(req.headers)){
+      const lower=key.toLowerCase();
+      if(["host","content-length","connection"].includes(lower)) continue;
+      if(value!==undefined) headers[key]=value;
+    }
+
+    let body;
+    if(!["GET","HEAD"].includes(req.method)){
+      const chunks=[];
+      for await (const chunk of req) chunks.push(chunk);
+      body=Buffer.concat(chunks);
+    }
+
+    const upstream=await fetch(targetUrl,{
+      method:req.method,
+      headers,
+      body,
+      redirect:"manual"
+    });
+
+    res.status(upstream.status);
+
+    const passthroughHeaders=[
+      "content-type",
+      "cache-control",
+      "location",
+      "set-cookie",
+      "content-language"
+    ];
+    for(const name of passthroughHeaders){
+      const value=upstream.headers.get(name);
+      if(value) res.setHeader(name,value);
+    }
+
+    const buffer=Buffer.from(await upstream.arrayBuffer());
+    res.send(buffer);
+  }catch(error){
+    console.error("Firebase auth proxy error:",error);
+    res.status(502).send("Authentication helper unavailable.");
+  }
+}
+
+app.all("/__/auth/*splat",proxyFirebaseAuth);
+app.all("/__/firebase/init.json",proxyFirebaseAuth);
+
 app.use(express.json({limit:"20mb"}));
-app.use(express.static("public",{etag:true,maxAge:"1h"}));
+app.get("/api/version",(req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  res.json({version:"1.0.7"});
+});
+
+app.use((req,res,next)=>{
+  if(req.path==="/" || req.path==="/index.html" || req.path==="/app.js"){
+    res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
+  }
+  next();
+});
+app.use(express.static("public",{etag:false,maxAge:0}));
 
 const buckets = new Map();
 function scanRateLimit(req,res,next){
@@ -66,8 +133,13 @@ function getFirebaseConfig(){
 
 app.get("/api/config",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
+  const firebaseConfig=getFirebaseConfig();
+  if(firebaseConfig){
+    // Same-site auth domain prevents Safari storage-partitioning failures.
+    firebaseConfig.authDomain=req.get("host");
+  }
   res.json({
-    firebaseConfig:getFirebaseConfig(),
+    firebaseConfig,
     appleAuthEnabled:String(process.env.APPLE_AUTH_ENABLED||"false").toLowerCase()==="true",
     aiConfigured:Boolean(process.env.GEMINI_API_KEY)
   });
