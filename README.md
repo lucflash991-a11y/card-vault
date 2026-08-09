@@ -1,4 +1,4 @@
-# Card Vault v1.0.5
+# Card Vault v1.0.6
 
 Major rebuild of the Card Vault PWA.
 
@@ -115,3 +115,11 @@ Apple sign-in cannot simply be activated by frontend code. Apple requires the we
 - Falls back to storing the front image only if a card document is still unusually large.
 - Adds clearer save-error diagnostics.
 - Service-worker cache bumped.
+
+
+## v1.0.6 save diagnostic + metadata-only cloud records
+- Firestore now stores card metadata only; scan photos no longer go into Firestore documents.
+- Front/back images are cached locally on the current device and reattached when cloud card records load.
+- This completely removes Firestore image/document-size issues from card saving.
+- Any remaining save failure now displays the exact Firebase error code and message for diagnosis.
+- Service worker cache bumped.

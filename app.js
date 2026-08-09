@@ -5,6 +5,25 @@ const SCAN_KEY = "cardvault.v10.scans";
 const THEME_KEY = "cardvault.v10.theme";
 const GUEST_KEY = "cardvault.v10.guest";
 const MIGRATION_KEY = "cardvault.v10.migrated";
+const IMAGE_CACHE_PREFIX = "cardvault.v106.image.";
+
+function saveLocalCardImages(card){
+  if(!card?.id)return;
+  try{
+    localStorage.setItem(IMAGE_CACHE_PREFIX+card.id,JSON.stringify({front:card.front||"",back:card.back||""}));
+  }catch(err){
+    console.warn("Could not cache card images locally:",err);
+  }
+}
+
+function getLocalCardImages(id){
+  try{return JSON.parse(localStorage.getItem(IMAGE_CACHE_PREFIX+id)||"{}")}catch{return {}}
+}
+
+function hydrateLocalImages(card){
+  const cached=getLocalCardImages(card.id);
+  return {...card,front:card.front||cached.front||"",back:card.back||cached.back||""};
+}
 
 const money = (n) => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(Number(n||0));
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
@@ -327,8 +346,15 @@ async function prepareCardForCloud(card){
 async function persistCard(card){
   card=normalizeCard(card);
   if(currentUser && firebase?.db){
-    const cloudCard=await prepareCardForCloud(card);
-    await firebase.setDoc(firebase.doc(firebase.db,"users",currentUser.uid,"cards",card.id),cloudCard,{merge:true});
+    // Keep photos on this device. Firestore stores only portable card metadata.
+    // This avoids document-size/indexing problems entirely on the free tier.
+    saveLocalCardImages(card);
+    const cloudCard={...card,front:"",back:""};
+    await firebase.setDoc(
+      firebase.doc(firebase.db,"users",currentUser.uid,"cards",card.id),
+      cloudCard,
+      {merge:true}
+    );
   }else{
     const index=cards.findIndex(c=>c.id===card.id);
     if(index>=0)cards[index]=card;else cards.unshift(card);
@@ -502,11 +528,11 @@ $("addVaultBtn").addEventListener("click",async()=>{
     resetScan();go("home");
   }catch(err){
     console.error("Card save failed:",err);
-    const code=String(err?.code||"");
-    const msg=String(err?.message||"").toLowerCase();
+    const code=String(err?.code||"unknown");
+    const message=String(err?.message||"Unknown Firestore error");
     if(code.includes("permission-denied")) toast("Cloud save blocked by Firestore rules.");
-    else if(code.includes("resource-exhausted") || msg.includes("maximum") || msg.includes("too large")) toast("Card image was too large to save.");
-    else toast("Could not save this card.");
+    else toast(`Save failed: ${code}`);
+    setTimeout(()=>alert(`Card Vault save error\n\nCode: ${code}\n\n${message}`),80);
     savingCard=false;$("addVaultBtn").disabled=false;$("saveCardLabel").textContent="Add to Vault";
   }
 });
@@ -658,7 +684,7 @@ async function startCloudCards(){
   const col=firebase.collection(firebase.db,"users",currentUser.uid,"cards");
   await migrateLocalToCloud(col);
   unsubscribeCards=firebase.onSnapshot(col,snap=>{
-    cards=dedupeCards(snap.docs.map(d=>normalizeCard({id:d.id,...d.data()})));
+    cards=dedupeCards(snap.docs.map(d=>hydrateLocalImages(normalizeCard({id:d.id,...d.data()}))));
     renderAll();
   },()=>toast("Cloud sync paused"));
 }
