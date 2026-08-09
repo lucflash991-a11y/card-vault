@@ -413,10 +413,31 @@
           <div class="form-line"><label for="dTags">Tags</label><input id="dTags" placeholder="rookie, auto, numbered"></div>
         </div>
 
+        <div class="detail-section-title"><small>SELLING</small><h2>Listing Studio</h2></div>
+        <section class="selling-card"><div class="selling-top"><div><span>Suggested list price</span><strong id="sellSuggestedPrice">$0</strong></div><span id="sellMarginBadge" class="sell-margin neutral">No purchase price</span></div><div class="selling-actions-grid"><button id="copyListingBtn" type="button">Copy full listing</button><button id="copyTitleBtn" type="button">Copy title</button></div><div class="listing-preview"><span>LISTING TITLE</span><strong id="listingTitle">Card listing</strong></div><div class="listing-preview"><span>DESCRIPTION</span><p id="listingDescription">Open a card to generate a listing draft.</p></div><div class="selling-actions-grid"><button id="copyMarketplaceBtn" type="button">Facebook draft</button><button id="copyEbayBtn" type="button">eBay draft</button></div></section>
+
         <div class="detail-section-title"><small>PERSONAL</small><h2>Notes</h2></div>
         <textarea id="dNotes" class="notes-field" rows="4" placeholder="Why you bought it, where you got it, anything you want to remember..."></textarea>
 
         <button id="saveDetailBtn" class="primary-button" type="button"><span>Save changes</span><span>✓</span></button>
+      </section>
+
+      <section id="wantlist" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="home" type="button">‹</button>
+          <div><small>COLLECT NEXT</small><h1>Wantlist</h1></div>
+          <button id="addWantBtn" class="back-circle" type="button">＋</button>
+        </header>
+        <section class="want-summary"><div><span>Wanted</span><strong id="wantCount">0</strong></div><div><span>Target spend</span><strong id="wantTargetTotal">$0</strong></div><div><span>High priority</span><strong id="wantHighCount">0</strong></div></section>
+        <div class="vault-controls"><label class="search-box"><span>⌕</span><input id="wantSearch" type="search" placeholder="Search your wantlist"></label><select id="wantPriorityFilter" class="select-control"><option value="">All priorities</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></div>
+        <div id="wantList" class="want-list"></div>
+        <div id="wantEmpty" class="empty-state"><p>Your wantlist is empty.</p><button id="wantEmptyAdd" class="primary-button" type="button"><span>Add a wanted card</span><span>＋</span></button></div>
+      </section>
+
+      <section id="wantModal" class="sheet-modal hidden" aria-hidden="true">
+        <div class="sheet-backdrop" data-close-want></div><div class="sheet-card"><div class="sheet-grabber"></div><div class="sheet-title-row"><div><small>WANTLIST</small><h2 id="wantModalTitle">Add wanted card</h2></div><button class="back-circle" data-close-want type="button">×</button></div><input id="wantEditId" type="hidden">
+        <div class="form-sheet"><div class="form-line"><label for="wPlayer">Player</label><input id="wPlayer"></div><div class="form-line"><label for="wYear">Year</label><input id="wYear"></div><div class="form-line"><label for="wSet">Set</label><input id="wSet"></div><div class="form-line"><label for="wNumber">Card #</label><input id="wNumber"></div><div class="form-line"><label for="wParallel">Parallel</label><input id="wParallel"></div><div class="form-line money-line"><label for="wTarget">Target price</label><input id="wTarget" inputmode="decimal"></div><div class="form-line"><label for="wPriority">Priority</label><select id="wPriority"><option value="high">High</option><option value="medium" selected>Medium</option><option value="low">Low</option></select></div></div>
+        <textarea id="wNotes" class="notes-field" rows="3" placeholder="Notes…"></textarea><button id="saveWantBtn" class="primary-button" type="button"><span>Save to Wantlist</span><span>✓</span></button><button id="deleteWantBtn" class="secondary-button danger-row hidden" type="button">Remove from Wantlist</button></div>
       </section>
 
       <section id="profile" class="screen">
@@ -456,7 +477,7 @@
         </div>
 
         <p class="settings-footnote">When signed in, Card Vault can sync your vault through Firebase. Guest mode stays on this device.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.7.1</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.9.0</p>
       </section>
     </main>
 
@@ -464,12 +485,13 @@
       <button class="tab active" data-go="home" type="button"><span>⌂</span><small>Home</small></button>
       <button class="tab" data-go="vault" type="button"><span>▦</span><small>Vault</small></button>
       <button class="scan-tab" data-go="scan" type="button" aria-label="Scan a card"><span>✦</span></button>
+      <button class="tab" data-go="wantlist" type="button"><span>♡</span><small>Wantlist</small></button>
       <button class="tab" data-go="profile" type="button"><span>◉</span><small>Profile</small></button>
     </nav>
   </div>
 
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=171"></script>
+  <script type="module" src="/app.js?v=190"></script>
 </body>
 </html>

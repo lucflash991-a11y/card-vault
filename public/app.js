@@ -8,6 +8,7 @@ const MIGRATION_KEY = "cardvault.v10.migrated";
 const IDENTIFY_CACHE_PREFIX="cardvault.identify.v140.";
 const IDENTIFY_CACHE_TTL=7*24*60*60*1000;
 const PORTFOLIO_HISTORY_KEY="cardvault.portfolio.v140.history";
+const WANTLIST_KEY="cardvault.wantlist.v190";
 const PRICE_FRESH_MS=24*60*60*1000;
 const IMAGE_CACHE_PREFIX = "cardvault.v106.image.";
 
@@ -304,6 +305,7 @@ let isNavigatingAuth = false;
 let scanMode="single";
 let batchSessionCount=0;
 let selectedCollection="";
+let wantlist=[];
 
 function setLoginBusy(busy, provider="google"){
   const google=$("googleSignIn");
@@ -586,6 +588,18 @@ function renderRankings(){
   };
   draw("topPlayers",aggregate("player"));draw("topSets",aggregate("set"));
 }
+
+function loadWantlist(){try{const a=JSON.parse(localStorage.getItem(WANTLIST_KEY)||"[]");wantlist=Array.isArray(a)?a:[]}catch{wantlist=[]}}
+function saveWantlist(){localStorage.setItem(WANTLIST_KEY,JSON.stringify(wantlist));renderWantlist()}
+function wantDescriptor(w){return [w.year,w.set,w.parallel,w.number?`#${w.number}`:""].filter(Boolean).join(" • ")||"Wanted card"}
+function renderWantlist(){const list=$("wantList"),empty=$("wantEmpty");if(!list)return;const q=($("wantSearch")?.value||"").toLowerCase().trim(),pri=$("wantPriorityFilter")?.value||"";const rows=wantlist.filter(w=>[w.player,w.year,w.set,w.number,w.parallel,w.notes].join(" ").toLowerCase().includes(q)&&(!pri||w.priority===pri));list.innerHTML="";rows.forEach(w=>{const b=document.createElement("button");b.type="button";b.className="want-card";b.innerHTML=`<div><h3>${esc(w.player||"Unknown card")}</h3><p>${esc(wantDescriptor(w))}</p></div><div class="want-card-right"><strong>${money(Number(w.target||0))}</strong><span class="priority-${esc(w.priority||"medium")}">${esc(w.priority||"medium")}</span></div>`;b.onclick=()=>openWantModal(w.id);list.appendChild(b)});empty.classList.toggle("hidden",wantlist.length>0);list.classList.toggle("hidden",rows.length===0);$("wantCount").textContent=wantlist.length;$("wantTargetTotal").textContent=money(wantlist.reduce((s,w)=>s+Number(w.target||0),0));$("wantHighCount").textContent=wantlist.filter(w=>w.priority==="high").length}
+function openWantModal(id=""){const w=wantlist.find(x=>x.id===id);$("wantEditId").value=w?.id||"";$("wantModalTitle").textContent=w?"Edit wanted card":"Add wanted card";$("wPlayer").value=w?.player||"";$("wYear").value=w?.year||"";$("wSet").value=w?.set||"";$("wNumber").value=w?.number||"";$("wParallel").value=w?.parallel||"";$("wTarget").value=w?.target||"";$("wPriority").value=w?.priority||"medium";$("wNotes").value=w?.notes||"";$("deleteWantBtn").classList.toggle("hidden",!w);$("wantModal").classList.remove("hidden")}
+function closeWantModal(){$("wantModal").classList.add("hidden")}
+function listingTitleFor(c){return [c.year,c.set,c.player,c.rookie?"Rookie RC":"",c.parallel&&String(c.parallel).toLowerCase()!=="base"?c.parallel:"",c.number?`#${c.number}`:"",c.grade&&String(c.grade).toLowerCase()!=="raw"?c.grade:""].filter(Boolean).join(" ").replace(/\s+/g," ").trim().slice(0,80)}
+function suggestedListPrice(c){const v=Number(c.value||0);return v?Math.max(.99,Math.round(v*1.12*100)/100):0}
+function listingDescriptionFor(c,platform="general"){const a=[`${c.player||"Sports card"}${c.team?` — ${c.team}`:""}`,[c.year,c.set].filter(Boolean).join(" "),c.number?`Card #: ${c.number}`:"",c.parallel?`Parallel: ${c.parallel}`:"",c.serial?`Serial: ${c.serial}`:"",c.grade?`Grade/condition: ${c.grade}`:"",c.rookie?"Rookie card (RC)":"",c.notes?`Notes: ${c.notes}`:""] .filter(Boolean);a.push(platform==="ebay"?"Please review photos for exact condition and card details before purchasing.":platform==="facebook"?"Message me if interested. Open to reasonable offers.":"Photos show the exact card included.");return a.join("\n")}
+function renderSellingStudio(c){const price=suggestedListPrice(c),profit=price-Number(c.paid||0);$("sellSuggestedPrice").textContent=money(price);$("listingTitle").textContent=listingTitleFor(c)||"Card listing";$("listingDescription").textContent=listingDescriptionFor(c);const b=$("sellMarginBadge");b.className="sell-margin "+(!c.paid?"neutral":profit>=0?"positive":"negative");b.textContent=!c.paid?"No purchase price":`${profit>=0?"+":""}${money(profit)} vs paid`}
+async function copyText(text,msg){try{await navigator.clipboard.writeText(text);toast(msg||"Copied")}catch{toast("Could not copy")}}
 function stats(){
   const total=cards.reduce((s,c)=>s+Number(c.value||0),0);
   const paid=cards.reduce((s,c)=>s+Number(c.paid||0),0);
@@ -670,7 +684,7 @@ function renderVault(){
   else [...cards].sort((a,b)=>b.createdAt-a.createdAt).slice(0,4).forEach(c=>recent.appendChild(createCardTile(c)));
   renderFeatured();
 }
-function renderAll(){stats();renderVault();renderProfile();}
+function renderAll(){stats();renderVault();renderProfile();renderWantlist();}
 
 $("searchBox").addEventListener("input",renderVault);
 $("sortFilter").addEventListener("change",renderVault);
@@ -1208,6 +1222,16 @@ async function providerSignIn(provider, providerName="google"){
 }
 $("updateValueBtn")?.addEventListener("click",()=>updateMarketValue(true));
 renderPricing();
+$("addWantBtn")?.addEventListener("click",()=>openWantModal());
+$("wantEmptyAdd")?.addEventListener("click",()=>openWantModal());
+document.querySelectorAll("[data-close-want]").forEach(x=>x.addEventListener("click",closeWantModal));
+$("wantSearch")?.addEventListener("input",renderWantlist);$("wantPriorityFilter")?.addEventListener("change",renderWantlist);
+$("saveWantBtn")?.addEventListener("click",()=>{const id=$("wantEditId").value||uid();const old=wantlist.find(x=>x.id===id);const w={id,player:$("wPlayer").value.trim()||"Unknown card",year:$("wYear").value.trim(),set:$("wSet").value.trim(),number:$("wNumber").value.trim(),parallel:$("wParallel").value.trim(),target:Number($("wTarget").value||0),priority:$("wPriority").value,notes:$("wNotes").value.trim(),createdAt:old?.createdAt||Date.now()};wantlist=old?wantlist.map(x=>x.id===id?w:x):[w,...wantlist];saveWantlist();closeWantModal();toast("Wantlist updated")});
+$("deleteWantBtn")?.addEventListener("click",()=>{const id=$("wantEditId").value;wantlist=wantlist.filter(x=>x.id!==id);saveWantlist();closeWantModal();toast("Removed from Wantlist")});
+$("copyTitleBtn")?.addEventListener("click",()=>{const c=cards.find(x=>x.id===currentDetailId);if(c)copyText(listingTitleFor(c),"Title copied")});
+$("copyListingBtn")?.addEventListener("click",()=>{const c=cards.find(x=>x.id===currentDetailId);if(c)copyText(`${listingTitleFor(c)}\n\n${listingDescriptionFor(c)}\n\nSuggested price: ${money(suggestedListPrice(c))}`,"Listing copied")});
+$("copyMarketplaceBtn")?.addEventListener("click",()=>{const c=cards.find(x=>x.id===currentDetailId);if(c)copyText(`${listingTitleFor(c)}\n\n${listingDescriptionFor(c,"facebook")}\n\nPrice: ${money(suggestedListPrice(c))}`,"Facebook draft copied")});
+$("copyEbayBtn")?.addEventListener("click",()=>{const c=cards.find(x=>x.id===currentDetailId);if(c)copyText(`${listingTitleFor(c)}\n\n${listingDescriptionFor(c,"ebay")}\n\nSuggested Buy It Now: ${money(suggestedListPrice(c))}`,"eBay draft copied")});
 
 $("googleSignIn").addEventListener("click",()=>{
   if(!firebase)return;
@@ -1293,6 +1317,7 @@ if("serviceWorker" in navigator){
 }
 
 cards=readLocalCards();
+loadWantlist();
 saveLocalCards();
 renderAll();
 health();

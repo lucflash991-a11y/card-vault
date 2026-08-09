@@ -1,4 +1,4 @@
-# Card Vault v1.7.1 — AI Endurance Update
+# Card Vault v1.9.0 — Wantlist + Selling Mega Update
 
 Major rebuild of the Card Vault PWA.
 
@@ -261,3 +261,10 @@ This build keeps Google accounts, Firestore sync, cross-device thumbnails, dark 
 - Improved image-result caching uses a tiny perceptual-style fingerprint so repeat scans can be reused more efficiently.
 - Live web pricing remains manual and separate; it does not run during normal scanning.
 - Clearer 429/cooldown messaging.
+
+
+## v1.9.0
+### Wantlist
+Dedicated Wantlist tab with target price, priority, search, notes, and editing. Uses no AI requests.
+### Selling Mode
+Listing Studio on every card with suggested list price, profit-vs-paid, listing title/description, full copy, Facebook draft, and eBay draft. Uses existing card data and no extra AI requests.
