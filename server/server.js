@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"2.1.0"});
+  res.json({version:"2.3.0"});
 });
 
 app.use((req,res,next)=>{
@@ -360,5 +360,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v2.1.0 running on port ${port}`);
+  console.log(`Card Vault v2.3.0 running on port ${port}`);
 });

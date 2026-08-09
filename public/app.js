@@ -314,6 +314,9 @@ let unsubscribeOwnProfile=null;
 let socialFollows=[],socialLikes=[];
 let activeDiscoverTab="for-you";
 let unsubscribeFollows=null,unsubscribeLikes=null;
+let socialOffers=[],socialConversations=[],socialMessages=[],socialNotifications=[],socialBlocks=[];
+let unsubscribeOffers=null,unsubscribeConversations=null,unsubscribeMessages=null,unsubscribeNotifications=null,unsubscribeBlocks=null;
+let marketFilter="all",activeOfferType="cash",offerTargetCard=null,offerSelectedCardIds=[],tradeInboxTab="received",activeConversationId=null;
 
 function setLoginBusy(busy, provider="google"){
   const google=$("googleSignIn");
@@ -389,6 +392,9 @@ function normalizeCard(c){
     rookie:Boolean(c.rookie),
     favorite:Boolean(c.favorite),
     public:Boolean(c.public),
+    forTrade:Boolean(c.forTrade),
+    forSale:Boolean(c.forSale),
+    askPrice:Number(c.askPrice||0),
     notes:String(c.notes||""),
     collection:String(c.collection||""),
     tags:Array.isArray(c.tags)?c.tags.map(String):String(c.tags||"").split(",").map(x=>x.trim()).filter(Boolean),
@@ -590,10 +596,31 @@ function followerCount(uidValue){return socialFollows.filter(f=>f.targetUid===ui
 function followingCountFor(uidValue){return socialFollows.filter(f=>f.followerUid===uidValue).length}
 function likedByMe(card){return socialLikes.some(l=>l.userUid===currentUser?.uid&&l.publicCardId===publicCardKey(card))}
 function likeCount(card){const key=publicCardKey(card);return socialLikes.filter(l=>l.publicCardId===key).length}
+
+function hasBlocked(uid){return socialBlocks.some(b=>b.blockerUid===currentUser?.uid&&b.blockedUid===uid)}
+function isBlockedBy(uid){return socialBlocks.some(b=>b.blockerUid===uid&&b.blockedUid===currentUser?.uid)}
+async function notifyUser(uid,type,text,meta={}){if(!currentUser||!firebase?.db||!uid||uid===currentUser.uid)return;const ref=firebase.doc(firebase.collection(firebase.db,"publicNotifications"));await firebase.setDoc(ref,{targetUid:uid,actorUid:currentUser.uid,type,text,meta,read:false,createdAt:Date.now()})}
+async function toggleBlock(uid){if(!currentUser||!firebase?.db||!uid)return;const ref=firebase.doc(firebase.db,"publicBlocks",`${currentUser.uid}_${uid}`);if(hasBlocked(uid))await firebase.deleteDoc(ref);else await firebase.setDoc(ref,{blockerUid:currentUser.uid,blockedUid:uid,createdAt:Date.now()})}
+function openOfferModal(c){if(!currentUser||c.ownerUid===currentUser.uid)return;offerTargetCard=c;activeOfferType=c.forTrade&&!c.forSale?"trade":"cash";offerSelectedCardIds=[];$("offerTargetCard").innerHTML=`<img src="${c.front||"/icons/card-placeholder.svg"}"><div><strong>${esc(c.player)}</strong><span>${esc([c.year,c.set,c.parallel].filter(Boolean).join(" • "))}</span></div>`;$("offerCashAmount").value=c.askPrice||"";$("offerNote").value="";renderOfferUI();$("offerModal").classList.remove("hidden");document.body.classList.add("modal-open")}
+function closeOfferModal(){$("offerModal").classList.add("hidden");document.body.classList.remove("modal-open")}
+function renderOfferUI(){document.querySelectorAll("[data-offer-type]").forEach(b=>b.classList.toggle("active",b.dataset.offerType===activeOfferType));$("offerCashSection").classList.toggle("hidden",activeOfferType==="trade");$("offerTradeSection").classList.toggle("hidden",activeOfferType==="cash");const el=$("offerCardPicker");el.innerHTML="";cards.forEach(c=>{const sel=offerSelectedCardIds.includes(c.id),b=document.createElement("button");b.type="button";b.className="offer-card-option"+(sel?" selected":"");b.innerHTML=`<img src="${c.front||"/icons/card-placeholder.svg"}"><span>${esc(c.player)}</span>`;b.onclick=()=>{offerSelectedCardIds=sel?offerSelectedCardIds.filter(id=>id!==c.id):[...offerSelectedCardIds,c.id];renderOfferUI()};el.appendChild(b)});$("offerSelectedCount").textContent=`${offerSelectedCardIds.length} selected`}
+async function ensureConversation(uid){const id=[currentUser.uid,uid].sort().join("_"),ref=firebase.doc(firebase.db,"publicConversations",id);await firebase.setDoc(ref,{participants:[currentUser.uid,uid],updatedAt:Date.now()},{merge:true});return id}
+async function sendOffer(){const c=offerTargetCard;if(!c)return;const cash=Number($("offerCashAmount").value||0);if(activeOfferType==="cash"&&cash<=0){toast("Enter a cash amount");return}if(activeOfferType!=="cash"&&!offerSelectedCardIds.length){toast("Select a card");return}const offered=offerSelectedCardIds.map(id=>cards.find(c=>c.id===id)).filter(Boolean).map(c=>({id:c.id,player:c.player,front:c.front,value:c.value}));const ref=firebase.doc(firebase.collection(firebase.db,"publicOffers"));await firebase.setDoc(ref,{id:ref.id,fromUid:currentUser.uid,toUid:c.ownerUid,targetCard:{id:c.id,player:c.player,front:c.front,value:c.value},type:activeOfferType,cashAmount:cash,offeredCards:offered,note:$("offerNote").value.trim(),status:"pending",createdAt:Date.now(),updatedAt:Date.now()});await ensureConversation(c.ownerUid);await notifyUser(c.ownerUid,"offer",`New offer on ${c.player}`,{offerId:ref.id});closeOfferModal();toast("Offer sent")}
+function openTradeInbox(){tradeInboxTab="received";renderTradeInbox();$("tradeInboxModal").classList.remove("hidden");document.body.classList.add("modal-open")}
+function closeTradeInbox(){$("tradeInboxModal").classList.add("hidden");document.body.classList.remove("modal-open")}
+function renderTradeInbox(){document.querySelectorAll("[data-trade-inbox-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tradeInboxTab===tradeInboxTab));let rows=socialOffers.filter(o=>tradeInboxTab==="received"?o.toUid===currentUser?.uid&&o.status!=="completed":tradeInboxTab==="sent"?o.fromUid===currentUser?.uid&&o.status!=="completed":o.status==="completed"&&(o.toUid===currentUser?.uid||o.fromUid===currentUser?.uid));const el=$("tradeInboxList");if(!el)return;el.innerHTML="";if(!rows.length){el.innerHTML='<p class="muted-copy">No offers here yet.</p>';return}rows.forEach(o=>{const b=document.createElement("button");b.type="button";b.className="trade-offer-row";b.innerHTML=`<img src="${o.targetCard?.front||"/icons/card-placeholder.svg"}"><div><strong>${esc(o.targetCard?.player||"Card")}</strong><span>${esc(o.status)} • ${money(o.cashAmount||0)}</span></div><span class="trade-status">${esc(o.status)}</span>`;b.onclick=async()=>{if(o.toUid===currentUser.uid&&o.status==="pending"){const act=prompt("Type accept, decline, or counter:","accept");if(!act)return;let status=act.toLowerCase().startsWith("a")?"accepted":act.toLowerCase().startsWith("d")?"declined":"countered",payload={status,updatedAt:Date.now()};if(status==="countered"){const amt=prompt("Counter cash amount:",String(o.cashAmount||0));if(amt===null)return;payload.cashAmount=Number(amt||0);payload.status="pending"}await firebase.setDoc(firebase.doc(firebase.db,"publicOffers",o.id),payload,{merge:true});await notifyUser(o.fromUid,status,`${status}: ${o.targetCard?.player||"card"}`,{offerId:o.id})}else openChatWith(o.fromUid===currentUser.uid?o.toUid:o.fromUid)};el.appendChild(b)})}
+function renderMarket(){const q=String($("marketPlayerFilter")?.value||"").toLowerCase(),cond=$("marketConditionFilter")?.value||"all",sort=$("marketSort")?.value||"newest";let rows=publicCards.filter(c=>(c.forTrade||c.forSale)&&!hasBlocked(c.ownerUid)&&!isBlockedBy(c.ownerUid)&&[c.player,c.team,c.set,c.parallel].join(" ").toLowerCase().includes(q));if(marketFilter==="trade")rows=rows.filter(c=>c.forTrade);if(marketFilter==="sale")rows=rows.filter(c=>c.forSale);if(cond==="graded")rows=rows.filter(c=>String(c.grade||"").trim()&&String(c.grade).toLowerCase()!=="raw");if(cond==="raw")rows=rows.filter(c=>!String(c.grade||"").trim()||String(c.grade).toLowerCase()==="raw");if(sort==="value-high")rows.sort((a,b)=>Number(b.askPrice||b.value||0)-Number(a.askPrice||a.value||0));else if(sort==="value-low")rows.sort((a,b)=>Number(a.askPrice||a.value||0)-Number(b.askPrice||b.value||0));else if(sort==="trending")rows.sort((a,b)=>likeCount(b)-likeCount(a));else rows.sort((a,b)=>Number(b.sharedAt||0)-Number(a.sharedAt||0));const el=$("marketCards");if(!el)return;el.innerHTML="";rows.forEach(c=>{const w=document.createElement("article");w.className="social-card";w.innerHTML=`<div class="market-badges">${c.forTrade?'<span class="market-badge">TRADE</span>':""}${c.forSale?`<span class="market-badge">${c.askPrice?money(c.askPrice):"FOR SALE"}</span>`:""}</div><button class="social-card-main" type="button"><img src="${c.front||"/icons/card-placeholder.svg"}"><div class="social-card-copy"><strong>${esc(c.player)}</strong><span>@${esc(c.ownerUsername||"collector")}</span></div></button><button class="market-offer-btn" type="button">Make Offer</button>`;w.querySelector(".social-card-main").onclick=()=>openPublicProfile(c.ownerUid);w.querySelector(".market-offer-btn").onclick=()=>openOfferModal(c);el.appendChild(w)});$("marketCardsEmpty")?.classList.toggle("hidden",rows.length>0)}
+async function openChatWith(uid){if(hasBlocked(uid)||isBlockedBy(uid)){toast("Messaging unavailable");return}activeConversationId=await ensureConversation(uid);const p=publicProfiles.find(x=>x.uid===uid);$("chatName").textContent=p?.displayName||"Collector";$("chatHandle").textContent=`@${p?.username||"collector"}`;renderChat();$("chatModal").classList.remove("hidden");document.body.classList.add("modal-open")}
+function closeChat(){$("chatModal").classList.add("hidden");document.body.classList.remove("modal-open")}
+function renderChat(){const el=$("chatMessages");if(!el||!activeConversationId)return;const rows=socialMessages.filter(m=>m.conversationId===activeConversationId).sort((a,b)=>Number(a.createdAt||0)-Number(b.createdAt||0));el.innerHTML=rows.map(m=>`<div class="chat-bubble ${m.senderUid===currentUser?.uid?"mine":""}">${esc(m.text||"")}</div>`).join("");el.scrollTop=el.scrollHeight}
+async function sendChat(){const text=$("chatInput").value.trim();if(!text||!activeConversationId)return;const c=socialConversations.find(x=>x.id===activeConversationId);if(!c)return;const other=c.participants.find(x=>x!==currentUser.uid);await firebase.setDoc(firebase.doc(firebase.collection(firebase.db,"publicMessages")),{conversationId:activeConversationId,senderUid:currentUser.uid,text,createdAt:Date.now()});await firebase.setDoc(firebase.doc(firebase.db,"publicConversations",activeConversationId),{lastMessage:text,updatedAt:Date.now()},{merge:true});await notifyUser(other,"message","New message",{conversationId:activeConversationId});$("chatInput").value=""}
+function renderNotifications(){const rows=socialNotifications.filter(n=>n.targetUid===currentUser?.uid).sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0)),unread=rows.filter(n=>!n.read).length;$("notificationBadge").textContent=unread;$("notificationBadge").classList.toggle("hidden",unread===0);const el=$("notificationList");if(!el)return;el.innerHTML=rows.map(n=>`<div class="notification-row"><div class="notification-icon">•</div><div><strong>${esc(n.text||"Update")}</strong><span>${esc(n.type||"activity")}</span></div><time>${timeAgo(n.createdAt)}</time></div>`).join("")||'<p class="muted-copy">No notifications yet.</p>'}
+async function openNotifications(){$("notificationsModal").classList.remove("hidden");document.body.classList.add("modal-open");renderNotifications();for(const n of socialNotifications.filter(n=>n.targetUid===currentUser?.uid&&!n.read)){await firebase.setDoc(firebase.doc(firebase.db,"publicNotifications",n.id),{read:true},{merge:true})}}
+function closeNotifications(){$("notificationsModal").classList.add("hidden");document.body.classList.remove("modal-open")}
 function setDiscoverTab(tab){
   activeDiscoverTab=tab||"for-you";
   document.querySelectorAll("[data-discover-tab]").forEach(b=>b.classList.toggle("active",b.dataset.discoverTab===activeDiscoverTab));
-  const map={"for-you":"discoverForYou","following":"discoverFollowing","cards":"discoverCardsPanel","collectors":"discoverCollectorsPanel"};
+  const map={"for-you":"discoverForYou","following":"discoverFollowing","market":"discoverMarketPanel","collectors":"discoverCollectorsPanel"};
   Object.values(map).forEach(id=>$(id)?.classList.add("hidden"));
   $(map[activeDiscoverTab])?.classList.remove("hidden");
   renderDiscover();
@@ -738,12 +765,8 @@ function renderDiscover(){
   renderFeaturedCollections(q);
   renderCardGrid("recentSharedCards",recent.slice(0,8),"recentSharedEmpty");
   renderFollowingFeed(q);
-  let all=[...recent],sort=$("discoverCardSort")?.value||"trending";
-  if(sort==="trending")all.sort((a,b)=>likeCount(b)-likeCount(a)||Number(b.sharedAt||0)-Number(a.sharedAt||0));
-  else if(sort==="value")all.sort((a,b)=>Number(b.value||0)-Number(a.value||0));
-  else all.sort((a,b)=>Number(b.sharedAt||0)-Number(a.sharedAt||0));
-  renderCardGrid("allDiscoverCards",all,"allDiscoverCardsEmpty",{trending:sort==="trending"});
   renderCollectorDirectory(q);
+  renderMarket();renderNotifications();
 }
 function openPublicProfile(uidValue){
   const p=publicProfiles.find(x=>x.uid===uidValue);if(!p)return;
@@ -755,7 +778,7 @@ function openPublicProfile(uidValue){
   $("publicFavorite").textContent=`Favorite: ${p.favorite||"—"}`;
   $("publicCardCount").textContent=Number(p.cardCount||0);
   $("publicVaultValue").textContent=money(Number(p.vaultValue||0));
-  $("publicAchievementCount").textContent=Number(p.achievementCount||0);
+  $("publicAchievementCount").textContent=Number(p.achievementCount||0);$("publicMessageBtn").onclick=()=>openChatWith(uidValue);$("publicBlockBtn").textContent=hasBlocked(uidValue)?"Unblock user":"Block user";$("publicBlockBtn").onclick=()=>toggleBlock(uidValue);
   $("publicFollowerCount").textContent=followerCount(uidValue);
   $("publicFollowingCount").textContent=followingCountFor(uidValue);
   const followBtn=$("publicFollowBtn");
@@ -769,6 +792,7 @@ function openPublicProfile(uidValue){
     d.innerHTML=`<img src="${c.front||"/icons/card-placeholder.svg"}" alt=""><div><strong>${esc(c.player)}</strong><span>${money(c.value)}</span></div>`;
     el.appendChild(d)
   });
+  const mkt=publicCards.filter(c=>c.ownerUid===uidValue&&(c.forTrade||c.forSale)),pm=$("publicMarketCards");pm.innerHTML="";mkt.forEach(c=>{const w=document.createElement("article");w.className="social-card";w.innerHTML=`<button class="social-card-main" type="button"><img src="${c.front||"/icons/card-placeholder.svg"}"><div class="social-card-copy"><strong>${esc(c.player)}</strong><span>${c.forTrade?"TRADE ":""}${c.forSale?"FOR SALE":""}</span></div></button>`;w.onclick=()=>openOfferModal(c);pm.appendChild(w)});$("publicMarketEmpty").classList.toggle("hidden",mkt.length>0);
   go("publicProfile");
 }
 function startOwnProfileSubscription(){
@@ -803,6 +827,11 @@ function startPublicSubscriptions(){
       socialLikes=snap.docs.map(d=>({id:d.id,...d.data()})).filter(Boolean);
       renderDiscover();
     },err=>console.warn("Likes:",err));
+    unsubscribeOffers=firebase.onSnapshot(firebase.collection(firebase.db,"publicOffers"),snap=>{socialOffers=snap.docs.map(d=>({id:d.id,...d.data()})).filter(o=>o.fromUid===currentUser.uid||o.toUid===currentUser.uid);const p=socialOffers.filter(o=>o.toUid===currentUser.uid&&o.status==="pending").length;$("offerInboxBadge").textContent=p;$("offerInboxBadge").classList.toggle("hidden",p===0);renderTradeInbox()},err=>console.warn("Offers:",err));
+    unsubscribeConversations=firebase.onSnapshot(firebase.collection(firebase.db,"publicConversations"),snap=>{socialConversations=snap.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.participants?.includes(currentUser.uid));renderChat()},err=>console.warn("Conversations:",err));
+    unsubscribeMessages=firebase.onSnapshot(firebase.collection(firebase.db,"publicMessages"),snap=>{socialMessages=snap.docs.map(d=>({id:d.id,...d.data()})).filter(m=>socialConversations.some(c=>c.id===m.conversationId));renderChat()},err=>console.warn("Messages:",err));
+    unsubscribeNotifications=firebase.onSnapshot(firebase.collection(firebase.db,"publicNotifications"),snap=>{socialNotifications=snap.docs.map(d=>({id:d.id,...d.data()})).filter(n=>n.targetUid===currentUser.uid);renderNotifications()},err=>console.warn("Notifications:",err));
+    unsubscribeBlocks=firebase.onSnapshot(firebase.collection(firebase.db,"publicBlocks"),snap=>{socialBlocks=snap.docs.map(d=>({id:d.id,...d.data()})).filter(b=>b.blockerUid===currentUser.uid||b.blockedUid===currentUser.uid);renderMarket()},err=>console.warn("Blocks:",err));
   }catch(err){console.warn("Discover unavailable:",err)}
 }
 function renderProfile(){
@@ -1058,7 +1087,7 @@ function openDetails(id){
     const a=document.createElement("a");a.href=src.url;a.target="_blank";a.rel="noopener noreferrer";a.textContent=src.title||`Source ${i+1}`;srcWrap.appendChild(a)
   });
   renderDetailPriceHistory(c);renderSellingStudio(c);
-  $("cardPublicToggle").checked=Boolean(c.public);
+  $("cardPublicToggle").checked=Boolean(c.public);$("cardTradeToggle").checked=Boolean(c.forTrade);$("cardSaleToggle").checked=Boolean(c.forSale);$("cardAskPrice").value=c.askPrice||"";
   renderDetailImage(c);go("details");
 }
 function renderDetailImage(c){
@@ -1162,7 +1191,7 @@ $("saveDetailBtn").addEventListener("click",async()=>{
     const updated={
       ...c,player:$("dPlayer").value.trim()||"Unknown card",team:$("dTeam").value.trim(),year:$("dYear").value.trim(),
       set:$("dSet").value.trim(),number:$("dNumber").value.trim(),parallel:$("dParallel").value.trim(),serial:$("dSerial").value.trim(),
-      grade:$("dGrade").value.trim(),paid:Number($("dPaid").value||0),value:newValue,collection:$("dCollection").value.trim(),tags:$("dTags").value.split(",").map(x=>x.trim()).filter(Boolean),public:Boolean($("cardPublicToggle")?.checked),notes:$("dNotes").value.trim()
+      grade:$("dGrade").value.trim(),paid:Number($("dPaid").value||0),value:newValue,collection:$("dCollection").value.trim(),tags:$("dTags").value.split(",").map(x=>x.trim()).filter(Boolean),public:Boolean($("cardPublicToggle")?.checked),forTrade:Boolean($("cardTradeToggle")?.checked),forSale:Boolean($("cardSaleToggle")?.checked),askPrice:Number($("cardAskPrice")?.value||0),notes:$("dNotes").value.trim()
     };
     if(Math.abs(newValue-Number(c.value||0))>.001)updated.priceHistory=pushPriceHistory(c,newValue,"Manual edit");
     await persistCard(updated);toast("Card updated");openDetails(c.id);
@@ -1598,7 +1627,14 @@ $("copyShareLinkBtn")?.addEventListener("click",async()=>{const c=cards.find(x=>
 document.querySelectorAll("[data-discover-tab]").forEach(b=>b.addEventListener("click",()=>setDiscoverTab(b.dataset.discoverTab)));
 document.querySelectorAll("[data-switch-discover]").forEach(b=>b.addEventListener("click",()=>setDiscoverTab(b.dataset.switchDiscover)));
 $("discoverSearch")?.addEventListener("input",renderDiscover);
-$("discoverCardSort")?.addEventListener("change",renderDiscover);
+$("cardTradeToggle")?.addEventListener("change",()=>{if($("cardTradeToggle").checked)$("cardPublicToggle").checked=true});
+$("cardSaleToggle")?.addEventListener("change",()=>{if($("cardSaleToggle").checked)$("cardPublicToggle").checked=true});
+document.querySelectorAll("[data-market-filter]").forEach(b=>b.addEventListener("click",()=>{marketFilter=b.dataset.marketFilter;document.querySelectorAll("[data-market-filter]").forEach(x=>x.classList.toggle("active",x===b));renderMarket()}));
+$("marketPlayerFilter")?.addEventListener("input",renderMarket);$("marketConditionFilter")?.addEventListener("change",renderMarket);$("marketSort")?.addEventListener("change",renderMarket);
+$("openTradeInboxBtn")?.addEventListener("click",openTradeInbox);document.querySelectorAll("[data-close-offer]").forEach(x=>x.addEventListener("click",closeOfferModal));document.querySelectorAll("[data-offer-type]").forEach(b=>b.addEventListener("click",()=>{activeOfferType=b.dataset.offerType;renderOfferUI()}));$("sendOfferBtn")?.addEventListener("click",()=>sendOffer().catch(e=>{console.warn(e);toast("Could not send offer")}));
+document.querySelectorAll("[data-close-trade-inbox]").forEach(x=>x.addEventListener("click",closeTradeInbox));document.querySelectorAll("[data-trade-inbox-tab]").forEach(b=>b.addEventListener("click",()=>{tradeInboxTab=b.dataset.tradeInboxTab;renderTradeInbox()}));
+document.querySelectorAll("[data-close-chat]").forEach(x=>x.addEventListener("click",closeChat));$("chatSendBtn")?.addEventListener("click",()=>sendChat().catch(e=>console.warn(e)));
+$("notificationsBtn")?.addEventListener("click",()=>openNotifications());document.querySelectorAll("[data-close-notifications]").forEach(x=>x.addEventListener("click",closeNotifications));
 $("updateValueBtn")?.addEventListener("click",()=>updateMarketValue(true));
 renderPricing();
 $("copyTitleBtn")?.addEventListener("click",()=>{const c=cards.find(x=>x.id===currentDetailId);if(c)copyText(listingTitleFor(c),"Title copied")});

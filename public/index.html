@@ -413,6 +413,11 @@
           <div class="form-line"><label for="dTags">Tags</label><input id="dTags" placeholder="rookie, auto, numbered"></div>
         </div>
 
+        <div class="detail-section-title"><small>MARKET</small><h2>Availability</h2></div>
+        <section class="market-toggle-panel"><div><strong>Open to Trade</strong><p>Let collectors include this card in trade offers.</p></div><label class="switch-control"><input id="cardTradeToggle" type="checkbox"><span></span></label></section>
+        <section class="market-toggle-panel"><div><strong>For Sale</strong><p>Show this card in Market as available for cash offers.</p></div><label class="switch-control"><input id="cardSaleToggle" type="checkbox"><span></span></label></section>
+        <div class="market-price-row"><label for="cardAskPrice">Asking price</label><div><span>$</span><input id="cardAskPrice" type="number" min="0" step="0.01" placeholder="Optional"></div></div>
+
         <div class="detail-section-title"><small>PLATFORM</small><h2>Share this card</h2></div>
         <section class="share-card-panel">
           <div><strong>Public card</strong><p>Show this card on your public profile and in Discover.</p></div>
@@ -433,7 +438,7 @@
         <header class="page-header">
           <button class="back-circle" data-go="home" type="button">‹</button>
           <div><small>CARD VAULT SOCIAL</small><h1>Discover</h1></div>
-          <div class="header-spacer"></div>
+          <button id="notificationsBtn" class="back-circle notification-button" type="button">♢<span id="notificationBadge" class="notification-badge hidden">0</span></button>
         </header>
 
         <label class="search-box discover-search">
@@ -444,7 +449,7 @@
         <div class="discover-tabs" role="tablist" aria-label="Discover sections">
           <button class="discover-tab active" data-discover-tab="for-you" type="button">For You</button>
           <button class="discover-tab" data-discover-tab="following" type="button">Following</button>
-          <button class="discover-tab" data-discover-tab="cards" type="button">Cards</button>
+          <button class="discover-tab" data-discover-tab="market" type="button">Market</button>
           <button class="discover-tab" data-discover-tab="collectors" type="button">Collectors</button>
         </div>
 
@@ -469,7 +474,7 @@
           <section class="discover-section">
             <div class="settings-title">
               <div><small>POPULAR</small><h2>Trending cards</h2></div>
-              <button class="text-button" data-switch-discover="cards" type="button">See all</button>
+              <button class="text-button" data-switch-discover="market" type="button">See all</button>
             </div>
             <div id="trendingCards" class="social-card-grid"></div>
             <p id="trendingCardsEmpty" class="muted-copy">Like shared cards to start building trends.</p>
@@ -502,17 +507,23 @@
           </div>
         </div>
 
-        <div id="discoverCardsPanel" class="discover-panel hidden">
+        <div id="discoverMarketPanel" class="discover-panel hidden">
           <div class="discover-panel-head">
-            <div><small>PUBLIC CARDS</small><h2>Cards</h2></div>
-            <select id="discoverCardSort" class="select-control">
-              <option value="trending">Trending</option>
-              <option value="newest">Newest</option>
-              <option value="value">Highest value</option>
-            </select>
+            <div><small>BUY • SELL • TRADE</small><h2>Market</h2></div>
+            <button id="openTradeInboxBtn" class="market-inbox-btn" type="button">Offers <span id="offerInboxBadge" class="mini-badge hidden">0</span></button>
           </div>
-          <div id="allDiscoverCards" class="social-card-grid"></div>
-          <p id="allDiscoverCardsEmpty" class="muted-copy">No cards match your search.</p>
+          <div class="market-filter-row">
+            <button class="market-filter active" data-market-filter="all" type="button">All</button>
+            <button class="market-filter" data-market-filter="trade" type="button">For Trade</button>
+            <button class="market-filter" data-market-filter="sale" type="button">For Sale</button>
+          </div>
+          <div class="market-controls">
+            <input id="marketPlayerFilter" type="search" placeholder="Player / team / set">
+            <select id="marketConditionFilter"><option value="all">All conditions</option><option value="graded">Graded</option><option value="raw">Raw</option></select>
+            <select id="marketSort"><option value="newest">Newest</option><option value="value-high">Value: high to low</option><option value="value-low">Value: low to high</option><option value="trending">Most liked</option></select>
+          </div>
+          <div id="marketCards" class="social-card-grid"></div>
+          <div id="marketCardsEmpty" class="discover-big-empty hidden"><span>◇</span><h2>No market cards yet</h2><p>Cards marked For Trade or For Sale will show up here.</p></div>
         </div>
 
         <div id="discoverCollectorsPanel" class="discover-panel hidden">
@@ -550,6 +561,15 @@
         <section class="profile-platform-section">
           <div class="settings-title"><div><small>SHOWCASE</small><h2>Featured cards</h2></div></div>
           <div id="publicShowcase" class="showcase-grid"></div>
+        </section>
+        <div class="public-profile-actions">
+          <button id="publicMessageBtn" class="secondary-button" type="button">Message</button>
+          <button id="publicBlockBtn" class="danger-outline-button" type="button">Block user</button>
+        </div>
+        <section class="profile-platform-section">
+          <div class="settings-title"><div><small>MARKET</small><h2>For Trade / Sale</h2></div></div>
+          <div id="publicMarketCards" class="social-card-grid"></div>
+          <p id="publicMarketEmpty" class="muted-copy">No market cards.</p>
         </section>
       </section>
 
@@ -613,7 +633,7 @@
         </div>
 
         <p class="settings-footnote">Platform features live in Discover. Your Home stays personal and clean.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v2.1.0</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v2.3.0</p>
       </section>
     </main>
 
@@ -657,8 +677,39 @@
     </div>
   </section>
 
-  <div id="toast" class="toast hidden" aria-live="polite"></div>
+  <section id="offerModal" class="sheet-modal hidden" aria-hidden="true">
+    <div class="sheet-backdrop" data-close-offer></div><div class="sheet-card">
+      <div class="sheet-grabber"></div><div class="sheet-title-row"><div><small>MAKE AN OFFER</small><h2>Offer</h2></div><button class="back-circle" data-close-offer type="button">×</button></div>
+      <div id="offerTargetCard" class="offer-target-card"></div>
+      <div class="offer-type-tabs"><button class="offer-type active" data-offer-type="cash" type="button">Cash</button><button class="offer-type" data-offer-type="trade" type="button">Cards</button><button class="offer-type" data-offer-type="mixed" type="button">Cards + Cash</button></div>
+      <div id="offerCashSection" class="offer-section"><label>Cash amount</label><div class="money-input"><span>$</span><input id="offerCashAmount" type="number" min="0" step="0.01"></div></div>
+      <div id="offerTradeSection" class="offer-section hidden"><div class="settings-title"><div><small>YOUR VAULT</small><h2>Select cards</h2></div><span id="offerSelectedCount">0 selected</span></div><div id="offerCardPicker" class="offer-card-picker"></div></div>
+      <label class="offer-note-label">Note<textarea id="offerNote" rows="3" maxlength="300" placeholder="Would you take this?"></textarea></label>
+      <button id="sendOfferBtn" class="primary-button" type="button"><span>Send offer</span><span>↗</span></button>
+    </div>
+  </section>
+  <section id="tradeInboxModal" class="sheet-modal hidden" aria-hidden="true">
+    <div class="sheet-backdrop" data-close-trade-inbox></div><div class="sheet-card sheet-card-tall">
+      <div class="sheet-grabber"></div><div class="sheet-title-row"><div><small>TRADE CENTER</small><h2>Offers</h2></div><button class="back-circle" data-close-trade-inbox type="button">×</button></div>
+      <div class="trade-inbox-tabs"><button class="trade-inbox-tab active" data-trade-inbox-tab="received" type="button">Received</button><button class="trade-inbox-tab" data-trade-inbox-tab="sent" type="button">Sent</button><button class="trade-inbox-tab" data-trade-inbox-tab="completed" type="button">Completed</button></div>
+      <div id="tradeInboxList" class="trade-inbox-list"></div>
+    </div>
+  </section>
+  <section id="chatModal" class="sheet-modal hidden" aria-hidden="true">
+    <div class="sheet-backdrop" data-close-chat></div><div class="sheet-card sheet-card-chat">
+      <div class="sheet-grabber"></div><div class="chat-head"><button class="back-circle" data-close-chat type="button">‹</button><div><strong id="chatName">Collector</strong><span id="chatHandle">@collector</span></div></div>
+      <div id="chatMessages" class="chat-messages"></div>
+      <div class="chat-compose"><textarea id="chatInput" rows="1" maxlength="500" placeholder="Message"></textarea><button id="chatSendBtn" type="button">↑</button></div>
+    </div>
+  </section>
+  <section id="notificationsModal" class="sheet-modal hidden" aria-hidden="true">
+    <div class="sheet-backdrop" data-close-notifications></div><div class="sheet-card sheet-card-tall">
+      <div class="sheet-grabber"></div><div class="sheet-title-row"><div><small>ACTIVITY</small><h2>Notifications</h2></div><button class="back-circle" data-close-notifications type="button">×</button></div>
+      <div id="notificationList" class="notification-list"></div>
+    </div>
+  </section>
+<div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=210"></script>
+  <script type="module" src="/app.js?v=230"></script>
 </body>
 </html>
