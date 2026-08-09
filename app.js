@@ -530,10 +530,22 @@ $("addVaultBtn").addEventListener("click",async()=>{
     console.error("Card save failed:",err);
     const code=String(err?.code||"unknown");
     const message=String(err?.message||"Unknown Firestore error");
-    if(code.includes("permission-denied")) toast("Cloud save blocked by Firestore rules.");
-    else toast(`Save failed: ${code}`);
-    setTimeout(()=>alert(`Card Vault save error\n\nCode: ${code}\n\n${message}`),80);
-    savingCard=false;$("addVaultBtn").disabled=false;$("saveCardLabel").textContent="Add to Vault";
+
+    $("analysisState").classList.remove("hidden");
+    $("analysisSpinner").classList.remove("ready");
+    $("analysisTitle").textContent=`SAVE ERROR: ${code}`;
+    $("analysisSub").textContent=message;
+
+    toast(`Save failed: ${code}`);
+    setTimeout(()=>alert(`CARD VAULT v1.0.7 SAVE ERROR
+
+Code: ${code}
+
+${message}`),100);
+
+    savingCard=false;
+    $("addVaultBtn").disabled=false;
+    $("saveCardLabel").textContent="Add to Vault";
   }
 });
 
@@ -718,10 +730,20 @@ async function health(){
   }catch{$("aiMode").textContent="Offline"}
 }
 
-if("serviceWorker"in navigator){
-  let refreshed=false;
-  navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!refreshed){refreshed=true;location.reload()}});
-  addEventListener("load",()=>navigator.serviceWorker.register("/service-worker.js").catch(()=>{}));
+if("serviceWorker" in navigator){
+  addEventListener("load",async()=>{
+    try{
+      const regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+      if("caches" in window){
+        const keys=await caches.keys();
+        await Promise.all(keys.map(k=>caches.delete(k)));
+      }
+      console.log("Card Vault v1.0.7: old PWA caches cleared");
+    }catch(err){
+      console.warn("Could not clear old PWA cache:",err);
+    }
+  });
 }
 
 cards=readLocalCards();

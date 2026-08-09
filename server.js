@@ -66,7 +66,18 @@ app.all("/__/auth/*splat",proxyFirebaseAuth);
 app.all("/__/firebase/init.json",proxyFirebaseAuth);
 
 app.use(express.json({limit:"20mb"}));
-app.use(express.static("public",{etag:true,maxAge:"1h"}));
+app.get("/api/version",(req,res)=>{
+  res.setHeader("Cache-Control","no-store");
+  res.json({version:"1.0.7"});
+});
+
+app.use((req,res,next)=>{
+  if(req.path==="/" || req.path==="/index.html" || req.path==="/app.js"){
+    res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
+  }
+  next();
+});
+app.use(express.static("public",{etag:false,maxAge:0}));
 
 const buckets = new Map();
 function scanRateLimit(req,res,next){

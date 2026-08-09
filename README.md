@@ -1,4 +1,4 @@
-# Card Vault v1.0.6
+# Card Vault v1.0.7
 
 Major rebuild of the Card Vault PWA.
 
@@ -123,3 +123,12 @@ Apple sign-in cannot simply be activated by frontend code. Apple requires the we
 - This completely removes Firestore image/document-size issues from card saving.
 - Any remaining save failure now displays the exact Firebase error code and message for diagnosis.
 - Service worker cache bumped.
+
+
+## v1.0.7 cache-proof diagnostic build
+- `index.html` loads `/app.js?v=107`.
+- HTML and app.js are served with no-cache headers.
+- Old service workers are automatically unregistered and Cache Storage is cleared.
+- Profile visibly shows `BUILD v1.0.7`.
+- Save failures show a `CARD VAULT v1.0.7 SAVE ERROR` alert with the exact Firebase code/message.
+- `/api/version` returns the live server build number.
