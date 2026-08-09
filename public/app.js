@@ -511,10 +511,41 @@ async function syncPlatformProfile(){
   else try{await firebase.deleteDoc(firebase.doc(firebase.db,"publicProfiles",currentUser.uid))}catch{}
   await syncPublicCards();
 }
-function openProfileEdit(){const p=platformProfile||defaultPlatformProfile();profilePhotoDraft=p.photo||"";$("editDisplayName").value=p.displayName||accountName();$("editUsername").value=p.username||"";$("editFavorite").value=p.favorite||"";$("editBio").value=p.bio||"";$("editProfilePrivacy").value=p.profilePrivacy||"private";$("editVaultPrivacy").value=p.vaultPrivacy||"private";showProfilePhotoEditor();$("profileEditModal").classList.remove("hidden")}
-function closeProfileEdit(){$("profileEditModal").classList.add("hidden")}
-function openShowcase(){showcaseDraft=[...showcaseIds];renderShowcasePicker();$("showcaseModal").classList.remove("hidden")}
-function closeShowcase(){$("showcaseModal").classList.add("hidden")}
+function openProfileEdit(){
+  const p=platformProfile||defaultPlatformProfile();
+  profilePhotoDraft=p.photo||"";
+  $("editDisplayName").value=p.displayName||accountName();
+  $("editUsername").value=p.username||"";
+  $("editFavorite").value=p.favorite||"";
+  $("editBio").value=p.bio||"";
+  $("editProfilePrivacy").value=p.profilePrivacy||"private";
+  $("editVaultPrivacy").value=p.vaultPrivacy||"private";
+  showProfilePhotoEditor();
+  const modal=$("profileEditModal");
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden","false");
+  document.body.classList.add("modal-open");
+}
+function closeProfileEdit(){
+  const modal=$("profileEditModal");
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden","true");
+  document.body.classList.remove("modal-open");
+}
+function openShowcase(){
+  showcaseDraft=[...showcaseIds];
+  renderShowcasePicker();
+  const modal=$("showcaseModal");
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden","false");
+  document.body.classList.add("modal-open");
+}
+function closeShowcase(){
+  const modal=$("showcaseModal");
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden","true");
+  document.body.classList.remove("modal-open");
+}
 function renderShowcasePicker(){const el=$("showcasePicker");if(!el)return;el.innerHTML="";cards.forEach(c=>{const chosen=showcaseDraft.includes(c.id),b=document.createElement("button");b.type="button";b.className="showcase-option"+(chosen?" selected":"");b.innerHTML=`<img src="${c.front||"/icons/card-placeholder.svg"}" alt=""><span>${esc(c.player)}</span>${chosen?'<i class="showcase-check">✓</i>':""}`;b.onclick=()=>{if(chosen)showcaseDraft=showcaseDraft.filter(id=>id!==c.id);else if(showcaseDraft.length<6)showcaseDraft.push(c.id);else{toast("Showcase is limited to 6 cards");return}renderShowcasePicker()};el.appendChild(b)})}
 function renderDiscover(){const q=($("discoverSearch")?.value||"").toLowerCase().trim(),profiles=publicProfiles.filter(p=>[p.displayName,p.username,p.bio,p.favorite].join(" ").toLowerCase().includes(q));const pe=$("discoverProfiles");if(pe){pe.innerHTML="";profiles.slice(0,20).forEach(p=>{const b=document.createElement("button");b.type="button";b.className="discover-profile";b.innerHTML=`<div class="discover-avatar">${profileAvatarHTML(p,p.displayName)}</div><div><strong>${esc(p.displayName||"Collector")}</strong><p>@${esc(p.username||"collector")} • ${esc(p.favorite||"Sports cards")}</p></div><em>${Number(p.cardCount||0)} cards</em>`;b.onclick=()=>openPublicProfile(p.uid);pe.appendChild(b)});$("discoverProfilesEmpty")?.classList.toggle("hidden",profiles.length>0)}
 const rows=publicCards.filter(c=>[c.player,c.team,c.year,c.set,c.parallel,c.ownerName,c.ownerUsername].join(" ").toLowerCase().includes(q)),ce=$("discoverCards");if(ce){ce.innerHTML="";rows.slice(0,30).forEach(c=>{const b=document.createElement("button");b.type="button";b.className="discover-card";b.innerHTML=`<img src="${c.front||"/icons/card-placeholder.svg"}" alt=""><div><strong>${esc(c.player)}</strong><span>${esc(c.year)} ${esc(c.set)} • @${esc(c.ownerUsername||"collector")}</span></div>`;b.onclick=()=>openPublicProfile(c.ownerUid);ce.appendChild(b)});$("discoverCardsEmpty")?.classList.toggle("hidden",rows.length>0)}}
@@ -1275,6 +1306,12 @@ async function providerSignIn(provider, providerName="google"){
   }
 }
 $("editProfileBtn")?.addEventListener("click",openProfileEdit);
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){
+    if(!$("profileEditModal")?.classList.contains("hidden"))closeProfileEdit();
+    if(!$("showcaseModal")?.classList.contains("hidden"))closeShowcase();
+  }
+});
 document.querySelectorAll("[data-close-profile-edit]").forEach(x=>x.addEventListener("click",closeProfileEdit));
 $("manageShowcaseBtn")?.addEventListener("click",openShowcase);
 document.querySelectorAll("[data-close-showcase]").forEach(x=>x.addEventListener("click",closeShowcase));

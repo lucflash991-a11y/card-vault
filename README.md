@@ -1,4 +1,4 @@
-# Card Vault v2.0.0 — Card Vault Platform
+# Card Vault v2.0.1 — Profile Hotfix
 
 Major rebuild of the Card Vault PWA.
 
@@ -294,3 +294,12 @@ Listing Studio on every card with suggested list price, profit-vs-paid, listing 
 
 ### Firebase
 Publish the included `firestore.rules` so `publicProfiles` and `publicCards` work with proper owner permissions.
+
+
+## v2.0.1 Profile Hotfix
+- Fixes Edit Profile appearing to do nothing.
+- Fixes Manage Showcase / Top 6 appearing to do nothing.
+- Restores the missing bottom-sheet modal CSS.
+- Adds correct z-index, backdrop, mobile-safe scrolling, animation, and body scroll lock.
+- Adds aria-hidden state updates and Escape-to-close for desktop.
+- No platform features were removed.
