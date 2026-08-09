@@ -1,4 +1,4 @@
-# Card Vault v1.9.0 — Wantlist + Selling Mega Update
+# Card Vault v1.9.1 — Selling Mode
 
 Major rebuild of the Card Vault PWA.
 
@@ -268,3 +268,10 @@ This build keeps Google accounts, Firestore sync, cross-device thumbnails, dark 
 Dedicated Wantlist tab with target price, priority, search, notes, and editing. Uses no AI requests.
 ### Selling Mode
 Listing Studio on every card with suggested list price, profit-vs-paid, listing title/description, full copy, Facebook draft, and eBay draft. Uses existing card data and no extra AI requests.
+
+
+## v1.9.1
+- Removed Wantlist completely.
+- Removed Wantlist tab, modal, local storage, filters, and code.
+- Selling Mode / Listing Studio remains intact.
+- Existing AI endurance, Scanner 2.0, portfolio analytics, filters, tags, collections, pricing, cloud sync, and card details remain intact.
