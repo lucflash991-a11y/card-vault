@@ -1,4 +1,4 @@
-# Card Vault v1.0.4
+# Card Vault v1.0.5
 
 Major rebuild of the Card Vault PWA.
 
@@ -106,3 +106,12 @@ Apple sign-in cannot simply be activated by frontend code. Apple requires the we
 - Removes the Safari cross-site storage dependency on `firebaseapp.com`.
 - Keeps Google popup authentication.
 - Service worker cache bumped.
+
+
+## v1.0.5 Firestore card-save fix
+- Compresses card images to small vault thumbnails before writing to Firestore.
+- Keeps AI scan photos high enough quality during recognition, but does not store those large originals in the Firestore document.
+- Adds an 850 KB safety target below Firestore's 1 MiB document limit.
+- Falls back to storing the front image only if a card document is still unusually large.
+- Adds clearer save-error diagnostics.
+- Service-worker cache bumped.

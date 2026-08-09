@@ -283,10 +283,52 @@ function renderDetailImage(c){
 $("showFrontBtn").addEventListener("click",()=>{detailSide="front";const c=cards.find(x=>x.id===currentDetailId);if(c)renderDetailImage(c)});
 $("showBackBtn").addEventListener("click",()=>{detailSide="back";const c=cards.find(x=>x.id===currentDetailId);if(c)renderDetailImage(c)});
 
+async function compactDataUrlForVault(dataUrl,maxSide=520,quality=.62){
+  if(!dataUrl || !dataUrl.startsWith("data:image/")) return dataUrl||"";
+  try{
+    const img=await loadImage(dataUrl);
+    const w0=img.naturalWidth||img.width;
+    const h0=img.naturalHeight||img.height;
+    const scale=Math.min(1,maxSide/Math.max(w0,h0));
+    const w=Math.max(1,Math.round(w0*scale));
+    const h=Math.max(1,Math.round(h0*scale));
+    const canvas=document.createElement("canvas");
+    canvas.width=w; canvas.height=h;
+    const ctx=canvas.getContext("2d",{alpha:false});
+    if(!ctx) return dataUrl;
+    ctx.drawImage(img,0,0,w,h);
+    return canvas.toDataURL("image/jpeg",quality);
+  }catch(err){
+    console.warn("Vault image compression failed:",err);
+    return dataUrl;
+  }
+}
+
+async function prepareCardForCloud(card){
+  const compact={...card};
+  compact.front=await compactDataUrlForVault(card.front,520,.62);
+  compact.back=await compactDataUrlForVault(card.back,520,.62);
+
+  // Firestore Native documents have a 1 MiB maximum size. Keep comfortable headroom.
+  let approx=new Blob([JSON.stringify(compact)]).size;
+  if(approx>850000){
+    compact.front=await compactDataUrlForVault(card.front,400,.52);
+    compact.back=await compactDataUrlForVault(card.back,400,.52);
+    approx=new Blob([JSON.stringify(compact)]).size;
+  }
+  if(approx>850000){
+    // Final safety fallback: retain front image and omit the back image from cloud storage.
+    // The card data still saves instead of failing entirely.
+    compact.back="";
+  }
+  return compact;
+}
+
 async function persistCard(card){
   card=normalizeCard(card);
   if(currentUser && firebase?.db){
-    await firebase.setDoc(firebase.doc(firebase.db,"users",currentUser.uid,"cards",card.id),card,{merge:true});
+    const cloudCard=await prepareCardForCloud(card);
+    await firebase.setDoc(firebase.doc(firebase.db,"users",currentUser.uid,"cards",card.id),cloudCard,{merge:true});
   }else{
     const index=cards.findIndex(c=>c.id===card.id);
     if(index>=0)cards[index]=card;else cards.unshift(card);
@@ -459,7 +501,12 @@ $("addVaultBtn").addEventListener("click",async()=>{
     toast("Added to your Vault");
     resetScan();go("home");
   }catch(err){
-    toast("Could not save this card");
+    console.error("Card save failed:",err);
+    const code=String(err?.code||"");
+    const msg=String(err?.message||"").toLowerCase();
+    if(code.includes("permission-denied")) toast("Cloud save blocked by Firestore rules.");
+    else if(code.includes("resource-exhausted") || msg.includes("maximum") || msg.includes("too large")) toast("Card image was too large to save.");
+    else toast("Could not save this card.");
     savingCard=false;$("addVaultBtn").disabled=false;$("saveCardLabel").textContent="Add to Vault";
   }
 });
