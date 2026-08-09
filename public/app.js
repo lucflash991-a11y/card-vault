@@ -310,6 +310,7 @@ let selectedCollection="";
 let platformProfile=null,activityLog=[],showcaseIds=[],showcaseDraft=[];
 let publicProfiles=[],publicCards=[],selectedPublicProfile=null,profilePhotoDraft="";
 let unsubscribePublicProfiles=null,unsubscribePublicCards=null;
+let unsubscribeOwnProfile=null;
 
 function setLoginBusy(busy, provider="google"){
   const google=$("googleSignIn");
@@ -471,7 +472,19 @@ function loadPlatformState(){
   try{activityLog=JSON.parse(localStorage.getItem(ACTIVITY_KEY)||"[]");if(!Array.isArray(activityLog))activityLog=[]}catch{activityLog=[]}
   try{showcaseIds=JSON.parse(localStorage.getItem(SHOWCASE_KEY)||"[]");if(!Array.isArray(showcaseIds))showcaseIds=[]}catch{showcaseIds=[]}
 }
-function savePlatformLocal(){localStorage.setItem(PROFILE_KEY,JSON.stringify(platformProfile||defaultPlatformProfile()));localStorage.setItem(ACTIVITY_KEY,JSON.stringify(activityLog.slice(0,40)));localStorage.setItem(SHOWCASE_KEY,JSON.stringify(showcaseIds.slice(0,6)))}
+function savePlatformLocal(){
+  localStorage.setItem(PROFILE_KEY,JSON.stringify(platformProfile||defaultPlatformProfile()));
+  localStorage.setItem(ACTIVITY_KEY,JSON.stringify(activityLog.slice(0,40)));
+  localStorage.setItem(SHOWCASE_KEY,JSON.stringify(showcaseIds.slice(0,6)));
+}
+function applyCloudProfileData(data){
+  if(!data)return;
+  platformProfile={...defaultPlatformProfile(),...platformProfile,...data};
+  showcaseIds=Array.isArray(data.showcaseIds)?data.showcaseIds.slice(0,6):showcaseIds;
+  savePlatformLocal();
+  renderProfile();
+  renderShowcase();
+}
 function profileAvatarHTML(p,name){return p?.photo?`<img src="${p.photo}" alt="">`:esc(initials(name||p?.displayName||"C"))}
 function addActivity(type,text){const icon={scan:"✦",favorite:"★",value:"↗",showcase:"▦",profile:"◉",share:"↗"}[type]||"•";activityLog.unshift({id:uid(),type,icon,text:String(text||""),at:Date.now()});activityLog=activityLog.slice(0,40);savePlatformLocal();renderActivity()}
 function timeAgo(ts){const m=Math.floor(Math.max(0,Date.now()-Number(ts||0))/60000);if(m<1)return"now";if(m<60)return`${m}m`;const h=Math.floor(m/60);if(h<24)return`${h}h`;return`${Math.floor(h/24)}d`}
@@ -505,10 +518,28 @@ async function syncPublicCards(){
 }
 async function syncPlatformProfile(){
   if(!currentUser||!firebase?.db||!platformProfile)return;
-  const data={uid:currentUser.uid,displayName:platformProfile.displayName,username:platformProfile.username,bio:platformProfile.bio,favorite:platformProfile.favorite,photo:platformProfile.photo,profilePrivacy:platformProfile.profilePrivacy,vaultPrivacy:platformProfile.vaultPrivacy,cardCount:cards.length,vaultValue:cards.reduce((s,c)=>s+Number(c.value||0),0),achievementCount:unlockedAchievements().length,showcaseIds:showcaseIds.slice(0,6),updatedAt:Date.now()};
+  const data={
+    uid:currentUser.uid,
+    displayName:platformProfile.displayName,
+    username:platformProfile.username,
+    usernameLower:String(platformProfile.username||"").toLowerCase(),
+    bio:platformProfile.bio,
+    favorite:platformProfile.favorite,
+    photo:platformProfile.photo,
+    profilePrivacy:platformProfile.profilePrivacy,
+    vaultPrivacy:platformProfile.vaultPrivacy,
+    cardCount:cards.length,
+    vaultValue:cards.reduce((s,c)=>s+Number(c.value||0),0),
+    achievementCount:unlockedAchievements().length,
+    showcaseIds:showcaseIds.slice(0,6),
+    updatedAt:Date.now()
+  };
   await firebase.setDoc(firebase.doc(firebase.db,"users",currentUser.uid,"profile","main"),data,{merge:true});
-  if(platformProfile.profilePrivacy==="public")await firebase.setDoc(firebase.doc(firebase.db,"publicProfiles",currentUser.uid),data,{merge:true});
-  else try{await firebase.deleteDoc(firebase.doc(firebase.db,"publicProfiles",currentUser.uid))}catch{}
+  if(platformProfile.profilePrivacy==="public"){
+    await firebase.setDoc(firebase.doc(firebase.db,"publicProfiles",currentUser.uid),data,{merge:true});
+  }else{
+    try{await firebase.deleteDoc(firebase.doc(firebase.db,"publicProfiles",currentUser.uid))}catch{}
+  }
   await syncPublicCards();
 }
 function openProfileEdit(){
@@ -550,6 +581,17 @@ function renderShowcasePicker(){const el=$("showcasePicker");if(!el)return;el.in
 function renderDiscover(){const q=($("discoverSearch")?.value||"").toLowerCase().trim(),profiles=publicProfiles.filter(p=>[p.displayName,p.username,p.bio,p.favorite].join(" ").toLowerCase().includes(q));const pe=$("discoverProfiles");if(pe){pe.innerHTML="";profiles.slice(0,20).forEach(p=>{const b=document.createElement("button");b.type="button";b.className="discover-profile";b.innerHTML=`<div class="discover-avatar">${profileAvatarHTML(p,p.displayName)}</div><div><strong>${esc(p.displayName||"Collector")}</strong><p>@${esc(p.username||"collector")} • ${esc(p.favorite||"Sports cards")}</p></div><em>${Number(p.cardCount||0)} cards</em>`;b.onclick=()=>openPublicProfile(p.uid);pe.appendChild(b)});$("discoverProfilesEmpty")?.classList.toggle("hidden",profiles.length>0)}
 const rows=publicCards.filter(c=>[c.player,c.team,c.year,c.set,c.parallel,c.ownerName,c.ownerUsername].join(" ").toLowerCase().includes(q)),ce=$("discoverCards");if(ce){ce.innerHTML="";rows.slice(0,30).forEach(c=>{const b=document.createElement("button");b.type="button";b.className="discover-card";b.innerHTML=`<img src="${c.front||"/icons/card-placeholder.svg"}" alt=""><div><strong>${esc(c.player)}</strong><span>${esc(c.year)} ${esc(c.set)} • @${esc(c.ownerUsername||"collector")}</span></div>`;b.onclick=()=>openPublicProfile(c.ownerUid);ce.appendChild(b)});$("discoverCardsEmpty")?.classList.toggle("hidden",rows.length>0)}}
 function openPublicProfile(uidValue){const p=publicProfiles.find(x=>x.uid===uidValue);if(!p)return;selectedPublicProfile=p;$("publicAvatar").innerHTML=profileAvatarHTML(p,p.displayName);$("publicName").textContent=p.displayName||"Collector";$("publicHandle").textContent=`@${p.username||"collector"}`;$("publicBio").textContent=p.bio||"";$("publicFavorite").textContent=`Favorite: ${p.favorite||"—"}`;$("publicCardCount").textContent=Number(p.cardCount||0);$("publicVaultValue").textContent=money(Number(p.vaultValue||0));$("publicAchievementCount").textContent=Number(p.achievementCount||0);const el=$("publicShowcase");el.innerHTML="";(p.showcaseIds||[]).forEach(id=>{const c=publicCards.find(x=>x.ownerUid===uidValue&&x.id===id);if(!c)return;const d=document.createElement("div");d.className="showcase-card";d.innerHTML=`<img src="${c.front||"/icons/card-placeholder.svg"}" alt=""><div><strong>${esc(c.player)}</strong><span>${money(c.value)}</span></div>`;el.appendChild(d)});go("publicProfile")}
+function startOwnProfileSubscription(){
+  if(!currentUser||!firebase?.db)return;
+  try{
+    unsubscribeOwnProfile?.();
+    const ref=firebase.doc(firebase.db,"users",currentUser.uid,"profile","main");
+    unsubscribeOwnProfile=firebase.onSnapshot(ref,snap=>{
+      if(!snap.exists())return;
+      applyCloudProfileData(snap.data());
+    },err=>console.warn("Own profile subscription:",err));
+  }catch(err){console.warn("Own profile subscription unavailable:",err)}
+}
 function startPublicSubscriptions(){if(!currentUser||!firebase?.db)return;try{unsubscribePublicProfiles?.();unsubscribePublicCards?.();unsubscribePublicProfiles=firebase.onSnapshot(firebase.collection(firebase.db,"publicProfiles"),snap=>{publicProfiles=snap.docs.map(d=>({uid:d.id,...d.data()})).filter(p=>p.uid!==currentUser.uid);renderDiscover()},err=>console.warn("Public profiles:",err));unsubscribePublicCards=firebase.onSnapshot(firebase.collection(firebase.db,"publicCards"),snap=>{publicCards=snap.docs.map(d=>d.data()).filter(Boolean);renderDiscover()},err=>console.warn("Public cards:",err))}catch(err){console.warn("Discover unavailable:",err)}}
 function renderProfile(){
   if(!platformProfile)loadPlatformState();
@@ -1225,12 +1267,21 @@ async function initFirebase(){
       if(user){
         authMode="firebase";
         localStorage.removeItem(GUEST_KEY);
+        loadPlatformState();
         await loadUserTheme();
         await startCloudCards();
+        startOwnProfileSubscription();
+        startPublicSubscriptions();
         showApp();
       }else if(localStorage.getItem(GUEST_KEY)==="1"){
-        authMode="guest";currentUser=null;cards=readLocalCards();showApp();
+        unsubscribeOwnProfile?.();unsubscribeOwnProfile=null;
+        unsubscribePublicProfiles?.();unsubscribePublicProfiles=null;
+        unsubscribePublicCards?.();unsubscribePublicCards=null;
+        authMode="guest";currentUser=null;cards=readLocalCards();loadPlatformState();showApp();
       }else{
+        unsubscribeOwnProfile?.();unsubscribeOwnProfile=null;
+        unsubscribePublicProfiles?.();unsubscribePublicProfiles=null;
+        unsubscribePublicCards?.();unsubscribePublicCards=null;
         showAuthGate();
       }
       renderProfile();
@@ -1315,8 +1366,17 @@ document.addEventListener("keydown",e=>{
 document.querySelectorAll("[data-close-profile-edit]").forEach(x=>x.addEventListener("click",closeProfileEdit));
 $("manageShowcaseBtn")?.addEventListener("click",openShowcase);
 document.querySelectorAll("[data-close-showcase]").forEach(x=>x.addEventListener("click",closeShowcase));
-$("saveShowcaseBtn")?.addEventListener("click",async()=>{showcaseIds=[...showcaseDraft].slice(0,6);savePlatformLocal();closeShowcase();renderShowcase();addActivity("showcase","Updated profile Showcase");try{await syncPlatformProfile();toast("Showcase saved")}catch{toast("Showcase saved locally")}});
-$("saveProfileBtn")?.addEventListener("click",async()=>{const username=sanitizeUsername($("editUsername").value);if(username.length<3){toast("Username needs at least 3 letters or numbers");return}platformProfile={...platformProfile,displayName:$("editDisplayName").value.trim()||accountName(),username,favorite:$("editFavorite").value.trim(),bio:$("editBio").value.trim(),photo:profilePhotoDraft||platformProfile?.photo||"",profilePrivacy:$("editProfilePrivacy").value,vaultPrivacy:$("editVaultPrivacy").value,updatedAt:Date.now()};savePlatformLocal();renderProfile();closeProfileEdit();addActivity("profile","Updated collector profile");try{await syncPlatformProfile();toast("Profile saved")}catch(e){console.warn(e);toast("Profile saved locally")}});
+$("saveShowcaseBtn")?.addEventListener("click",async()=>{
+  showcaseIds=[...showcaseDraft].slice(0,6);savePlatformLocal();closeShowcase();renderShowcase();addActivity("showcase","Updated profile Showcase");
+  try{await syncPlatformProfile();toast("Showcase synced")}catch(e){console.warn(e);toast("Showcase saved locally — cloud sync pending")}
+});
+$("saveProfileBtn")?.addEventListener("click",async()=>{
+  const username=sanitizeUsername($("editUsername").value);
+  if(username.length<3){toast("Username needs at least 3 letters or numbers");return}
+  platformProfile={...platformProfile,displayName:$("editDisplayName").value.trim()||accountName(),username,favorite:$("editFavorite").value.trim(),bio:$("editBio").value.trim(),photo:profilePhotoDraft||platformProfile?.photo||"",profilePrivacy:$("editProfilePrivacy").value,vaultPrivacy:$("editVaultPrivacy").value,updatedAt:Date.now()};
+  savePlatformLocal();renderProfile();closeProfileEdit();addActivity("profile","Updated collector profile");
+  try{await syncPlatformProfile();toast("Profile synced")}catch(e){console.warn(e);toast("Profile saved locally — cloud sync pending")}
+});
 $("discoverSearch")?.addEventListener("input",renderDiscover);
 $("cardPublicToggle")?.addEventListener("change",async()=>{const c=cards.find(x=>x.id===currentDetailId);if(!c)return;c.public=$("cardPublicToggle").checked;try{await persistCard(c);await syncPlatformProfile();addActivity("share",`${c.public?"Shared":"Unshared"} ${c.player}`);toast(c.public?"Card is public":"Card is private")}catch(e){console.warn(e);saveLocalCards();toast("Visibility saved locally")}});
 $("copyShareLinkBtn")?.addEventListener("click",async()=>{const c=cards.find(x=>x.id===currentDetailId);if(!c)return;if(!c.public){toast("Turn on Public card first");return}const link=`${location.origin}${location.pathname}?card=${encodeURIComponent(c.id)}&owner=${encodeURIComponent(currentUser?.uid||"")}`;try{await navigator.clipboard.writeText(link);toast("Share link copied")}catch{toast("Could not copy link")}});

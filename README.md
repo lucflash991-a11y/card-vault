@@ -1,4 +1,4 @@
-# Card Vault v2.0.1 — Profile Hotfix
+# Card Vault v2.0.2 — Cross-Device Profile Sync
 
 Major rebuild of the Card Vault PWA.
 
@@ -303,3 +303,14 @@ Publish the included `firestore.rules` so `publicProfiles` and `publicCards` wor
 - Adds correct z-index, backdrop, mobile-safe scrolling, animation, and body scroll lock.
 - Adds aria-hidden state updates and Escape-to-close for desktop.
 - No platform features were removed.
+
+
+## v2.0.2 Cross-Device Profile Sync
+- Signed-in profiles now subscribe to `users/{uid}/profile/main` in real time.
+- Collector/display name syncs between devices.
+- Username syncs between devices.
+- Bio and favorite team/player sync.
+- Profile photo syncs.
+- Profile and Vault privacy settings sync.
+- Top 6 Showcase syncs.
+- Firestore becomes the signed-in source of truth; localStorage is only a cache/fallback.
