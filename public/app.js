@@ -493,24 +493,11 @@ async function initFirebase(){
     $("appleSignIn").disabled=!firebase.appleEnabled;
     if(!firebase.appleEnabled)$("appleSignIn").title="Apple provider is not configured yet.";
 
-    try{
-      const redirectResult=await authMod.getRedirectResult(auth);
-      if(redirectResult?.user){
-        currentUser=redirectResult.user;
-        localStorage.removeItem(GUEST_KEY);
-        sessionStorage.removeItem("cardvault.pendingAuth");
-      }
-    }catch(err){
-      sessionStorage.removeItem("cardvault.pendingAuth");
-      toast(authErrorText(err));
-    }
-
     authMod.onAuthStateChanged(auth,async user=>{
       currentUser=user||null;
       if(user){
         authMode="firebase";
         localStorage.removeItem(GUEST_KEY);
-        sessionStorage.removeItem("cardvault.pendingAuth");
         await loadUserTheme();
         await startCloudCards();
         showApp();
@@ -541,8 +528,9 @@ async function providerSignIn(provider, providerName="google"){
   setLoginBusy(true,providerName);
 
   try{
-    // Popup-first fixes the Safari/PWA redirect loop that can return users to
-    // Card Vault without restoring the Firebase session.
+    // IMPORTANT: Popup only.
+    // Firebase redirect auth can fail on Safari/iOS when the auth domain is
+    // storage-partitioned from the Render app domain ("missing initial state").
     const result=await firebase.signInWithPopup(firebase.auth,provider);
 
     if(!result?.user){
@@ -552,29 +540,40 @@ async function providerSignIn(provider, providerName="google"){
     currentUser=result.user;
     authMode="firebase";
     localStorage.removeItem(GUEST_KEY);
-    await loadUserTheme();
-    await startCloudCards();
+
     showApp();
     renderProfile();
     toast(`Signed in as ${accountName()}`);
+
+    try{
+      await loadUserTheme();
+    }catch(err){
+      console.warn("Theme sync failed:",err);
+    }
+
+    try{
+      await startCloudCards();
+    }catch(err){
+      console.error("Cloud Vault sync failed:",err);
+      cards=readLocalCards();
+      renderAll();
+      $("storageMode").textContent="Signed in • cloud sync issue";
+      toast("Google sign-in worked. Cloud sync needs attention.");
+    }
   }catch(err){
     const code=String(err?.code||"");
+    console.error("Card Vault sign-in error:",err);
 
-    // Only fall back to redirect when the browser explicitly blocks popups.
     if(code.includes("popup-blocked")){
-      try{
-        sessionStorage.setItem("cardvault.pendingAuth","1");
-        await firebase.signInWithRedirect(firebase.auth,provider);
-        return;
-      }catch(redirectErr){
-        toast(authErrorText(redirectErr));
-      }
-    }else if(!code.includes("popup-closed-by-user") && !code.includes("cancelled-popup-request")){
-      console.error("Card Vault sign-in error:",err);
+      toast("Safari blocked the Google sign-in window. Open Card Vault in Safari and try again.");
+    }else if(code.includes("popup-closed-by-user")){
+      toast("Google sign-in was closed.");
+    }else if(code.includes("cancelled-popup-request")){
+      toast("Another sign-in attempt is already open.");
+    }else{
       toast(authErrorText(err));
     }
   }finally{
-    // Redirect navigation will leave the page before this matters.
     isNavigatingAuth=false;
     setLoginBusy(false,providerName);
   }
