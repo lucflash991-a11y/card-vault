@@ -1,11 +1,11 @@
 {
-  "name": "Card Vault AI",
+  "name": "Card Vault",
   "short_name": "Card Vault",
-  "description": "AI-powered sports card collection scanner and vault.",
+  "description": "AI-powered sports card scanner, collection tracker, and personal vault.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f4f4f2",
-  "theme_color": "#f4f4f2",
+  "background_color": "#f4f5f7",
+  "theme_color": "#f4f5f7",
   "icons": [
     {
       "src": "/icons/icon-192.png",

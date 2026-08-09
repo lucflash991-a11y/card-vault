@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f4f4f2">
+  <meta name="theme-color" content="#f4f5f7">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Card Vault">
@@ -13,158 +13,323 @@
   <title>Card Vault</title>
 </head>
 <body>
-<div class="app">
-<main>
-<section id="home" class="screen active">
-  <header class="home-header">
-    <div><span class="micro">CARD VAULT</span><h1>Good to see you.</h1></div>
-    <button class="avatar-btn" data-go="profile">CV</button>
-  </header>
+  <div id="authGate" class="auth-gate">
+    <div class="auth-shell">
+      <div class="auth-brand">
+        <div class="auth-logo">CV</div>
+        <p class="eyebrow">CARD VAULT</p>
+        <h1>Your collection,<br>finally organized.</h1>
+        <p class="auth-sub">Scan cards with AI, track your vault, and keep everything in one place.</p>
+      </div>
 
-  <section class="value-card">
-    <div class="value-top">
-      <div><span class="micro light">COLLECTION VALUE</span><strong id="homeValue">$0</strong></div>
-      <span class="trend" id="homeProfit">+$0</span>
+      <div class="auth-actions">
+        <button id="googleSignIn" class="social-button google-button" type="button">
+          <span class="social-mark google-mark">G</span>
+          <span>Continue with Google</span>
+        </button>
+
+        <button id="appleSignIn" class="social-button apple-button" type="button">
+          <span class="social-mark apple-mark">●</span>
+          <span>Continue with Apple</span>
+        </button>
+
+        <button id="guestSignIn" class="guest-button" type="button">Continue as guest</button>
+        <p id="authHint" class="auth-hint">Guest mode keeps your collection on this device.</p>
+      </div>
     </div>
-    <div class="value-bottom">
-      <div><b id="homeCards">0</b><span>Cards</span></div>
-      <div><b id="homeScans">0</b><span>AI scans</span></div>
-      <div><b id="homeRookies">0</b><span>Rookies</span></div>
-    </div>
-  </section>
-
-  <button class="scan-banner" data-go="scan">
-    <div class="scan-icon">✦</div>
-    <div class="scan-copy"><span class="micro">CARD VAULT AI</span><b>Scan a card</b><p>Front + back. Identified in seconds.</p></div>
-    <span class="chev">›</span>
-  </button>
-
-  <div class="row-head"><h2>Recent cards</h2><button data-go="vault">See all</button></div>
-  <div id="recentList" class="horizontal-cards empty"><p>Your cards will appear here.</p></div>
-</section>
-
-<section id="scan" class="screen">
-  <header class="screen-header">
-    <button class="round-btn" data-go="home">‹</button>
-    <div><span class="micro">CARD VAULT AI</span><h1>Scan card</h1></div>
-    <div class="round-placeholder"></div>
-  </header>
-
-  <div class="scan-instruction"><b>Take two clear photos.</b><span>Keep the full card visible and avoid glare.</span></div>
-
-  <div class="photo-stack">
-    <label class="photo-panel" id="frontCapture">
-      <input id="frontFile" type="file" accept="image/*" capture="environment">
-      <img id="frontImage" alt="Front card preview">
-      <div class="photo-overlay"><span>1</span><div><b>Front of card</b><small>Tap to capture</small></div><em>＋</em></div>
-      <button type="button" class="retake hidden" data-replace="front">Retake</button>
-    </label>
-
-    <label class="photo-panel" id="backCapture">
-      <input id="backFile" type="file" accept="image/*" capture="environment">
-      <img id="backImage" alt="Back card preview">
-      <div class="photo-overlay"><span>2</span><div><b>Back of card</b><small>Tap to capture</small></div><em>＋</em></div>
-      <button type="button" class="retake hidden" data-replace="back">Retake</button>
-    </label>
   </div>
 
-  <div class="ai-checks"><span>AI looks for</span><div>Player</div><div>Year</div><div>Set</div><div>Card #</div><div>Parallel</div><div>Serial #</div></div>
-  <button id="analyzeBtn" class="black-btn" disabled><span>Identify card</span><span>✦</span></button>
+  <div id="appShell" class="app-shell hidden">
+    <main>
+      <section id="home" class="screen active">
+        <header class="home-header">
+          <button class="wordmark" data-go="home" type="button">
+            <span class="wordmark-icon">CV</span>
+            <span>
+              <small>CARD VAULT</small>
+              <b id="homeGreeting">My Collection</b>
+            </span>
+          </button>
+          <button class="profile-chip" data-go="profile" type="button" aria-label="Open profile">
+            <span id="profileInitial">C</span>
+          </button>
+        </header>
 
-  <div id="analysisState" class="analysis hidden" aria-live="polite">
-    <span class="pulse-dot"></span>
-    <div><b id="analysisTitle">Analyzing both sides…</b><small id="analysisSub">Looking for exact set and parallel details.</small></div>
+        <section class="portfolio-card">
+          <div class="portfolio-top">
+            <div>
+              <span class="portfolio-label">COLLECTION VALUE</span>
+              <strong id="homeValue">$0</strong>
+            </div>
+            <div id="homeProfit" class="profit-badge">+$0</div>
+          </div>
+          <div class="portfolio-stats">
+            <div><strong id="homeCards">0</strong><span>Cards</span></div>
+            <div><strong id="homeScans">0</strong><span>AI scans</span></div>
+            <div><strong id="homeRookies">0</strong><span>Rookies</span></div>
+          </div>
+        </section>
+
+        <button class="scan-cta" data-go="scan" type="button">
+          <span class="scan-spark">✦</span>
+          <span class="scan-cta-copy">
+            <small>CARD VAULT AI</small>
+            <b>Scan a card</b>
+            <span>Front + back → identify → confirm</span>
+          </span>
+          <span class="chevron">›</span>
+        </button>
+
+        <section id="featuredWrap" class="featured-wrap hidden">
+          <div class="section-heading">
+            <div><small>HIGHLIGHT</small><h2>Top card</h2></div>
+          </div>
+          <button id="featuredCard" class="featured-card" type="button"></button>
+        </section>
+
+        <div class="section-heading">
+          <div><small>YOUR VAULT</small><h2>Recently added</h2></div>
+          <button data-go="vault" type="button">View all</button>
+        </div>
+        <div id="recentList" class="card-grid empty-state">
+          <p>Your first card will show up here.</p>
+        </div>
+      </section>
+
+      <section id="vault" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="home" type="button">‹</button>
+          <div><small>COLLECTION</small><h1>My Vault</h1></div>
+          <div class="header-spacer"></div>
+        </header>
+
+        <div class="vault-controls">
+          <label class="search-box">
+            <span>⌕</span>
+            <input id="searchBox" type="search" placeholder="Search player, set, team">
+          </label>
+          <select id="sortFilter" class="select-control" aria-label="Sort cards">
+            <option value="newest">Newest</option>
+            <option value="value">Highest value</option>
+            <option value="player">Player A–Z</option>
+          </select>
+        </div>
+
+        <div id="sportChips" class="chip-row">
+          <button type="button" class="filter-chip active" data-sport="">All</button>
+          <button type="button" class="filter-chip" data-sport="Football">Football</button>
+          <button type="button" class="filter-chip" data-sport="Basketball">Basketball</button>
+          <button type="button" class="filter-chip" data-sport="Baseball">Baseball</button>
+          <button type="button" class="filter-chip" data-sport="Hockey">Hockey</button>
+          <button type="button" class="filter-chip" data-sport="Soccer">Soccer</button>
+        </div>
+
+        <div id="vaultList" class="card-grid empty-state">
+          <p>No cards in your vault yet.</p>
+        </div>
+      </section>
+
+      <section id="scan" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="home" type="button">‹</button>
+          <div><small>CARD VAULT AI</small><h1>Scan card</h1></div>
+          <button id="resetScanBtn" class="header-action" type="button">Reset</button>
+        </header>
+
+        <div class="scan-copy">
+          <h2>Two photos. One match.</h2>
+          <p>Keep the whole card visible, shoot straight on, and avoid glare for the best result.</p>
+        </div>
+
+        <div class="photo-stack">
+          <label class="photo-panel" id="frontCapture">
+            <input id="frontFile" type="file" accept="image/*" capture="environment">
+            <img id="frontImage" alt="Front of card">
+            <div class="photo-empty">
+              <span class="photo-step">01</span>
+              <div><b>Front of card</b><small>Tap to take or choose photo</small></div>
+              <span class="photo-plus">＋</span>
+            </div>
+            <button class="retake hidden" data-replace="front" type="button">Replace</button>
+          </label>
+
+          <label class="photo-panel" id="backCapture">
+            <input id="backFile" type="file" accept="image/*" capture="environment">
+            <img id="backImage" alt="Back of card">
+            <div class="photo-empty">
+              <span class="photo-step">02</span>
+              <div><b>Back of card</b><small>Tap to take or choose photo</small></div>
+              <span class="photo-plus">＋</span>
+            </div>
+            <button class="retake hidden" data-replace="back" type="button">Replace</button>
+          </label>
+        </div>
+
+        <div class="ai-tags">
+          <span>AI checks</span>
+          <b>Player</b><b>Year</b><b>Set</b><b>Card #</b><b>Parallel</b><b>Serial</b>
+        </div>
+
+        <button id="analyzeBtn" class="primary-button" disabled type="button">
+          <span id="analyzeLabel">Identify card</span><span>✦</span>
+        </button>
+
+        <div id="analysisState" class="status-panel hidden" aria-live="polite">
+          <div id="analysisSpinner" class="spinner"></div>
+          <div><b id="analysisTitle">Both photos are ready</b><small id="analysisSub">Tap Identify card to run Card Vault AI.</small></div>
+        </div>
+      </section>
+
+      <section id="matches" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="scan" type="button">‹</button>
+          <div><small>AI RESULTS</small><h1>Matches</h1></div>
+          <div class="header-spacer"></div>
+        </header>
+
+        <p id="matchSummary" class="page-note">Compare the results and choose the exact card.</p>
+        <div id="scanWarning" class="warning-panel hidden"></div>
+        <div id="primaryMatch"></div>
+
+        <div id="alternateWrap" class="hidden">
+          <div class="section-heading compact-heading">
+            <div><small>ALTERNATES</small><h2>Other possibilities</h2></div>
+            <span id="alternateCount" class="small-count"></span>
+          </div>
+          <div id="alternateMatches" class="alternate-list"></div>
+        </div>
+
+        <button class="secondary-button" data-go="scan" type="button">None of these — scan again</button>
+      </section>
+
+      <section id="confirm" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="matches" type="button">‹</button>
+          <div><small>CONFIRM</small><h1>Add to Vault</h1></div>
+          <div class="header-spacer"></div>
+        </header>
+
+        <section class="confirm-card">
+          <img id="confirmFront" alt="Selected card">
+          <div>
+            <span id="confirmConfidence" class="confidence-badge">—</span>
+            <h2 id="confirmName">Card</h2>
+            <p id="confirmDescriptor"></p>
+          </div>
+        </section>
+
+        <div class="form-sheet">
+          <div class="form-line"><label for="fPlayer">Player</label><input id="fPlayer"></div>
+          <div class="form-line"><label for="fTeam">Team</label><input id="fTeam"></div>
+          <div class="form-line"><label for="fSport">Sport</label><select id="fSport"><option>Football</option><option>Basketball</option><option>Baseball</option><option>Hockey</option><option>Soccer</option><option>Other</option></select></div>
+          <div class="form-line"><label for="fYear">Year</label><input id="fYear"></div>
+          <div class="form-line"><label for="fSet">Set</label><input id="fSet"></div>
+          <div class="form-line"><label for="fNumber">Card #</label><input id="fNumber"></div>
+          <div class="form-line"><label for="fParallel">Parallel</label><input id="fParallel"></div>
+          <div class="form-line"><label for="fSerial">Serial #</label><input id="fSerial" placeholder="—"></div>
+          <div class="form-line"><label for="fGrade">Grade</label><input id="fGrade" placeholder="Raw"></div>
+          <div class="form-line money-line"><label for="fPaid">Paid</label><input id="fPaid" inputmode="decimal" placeholder="$0"></div>
+          <div class="form-line money-line"><label for="fValue">Est. value</label><input id="fValue" inputmode="decimal" placeholder="$0"></div>
+          <label class="toggle-line">
+            <input id="fRookie" type="checkbox">
+            <span class="toggle-control"></span>
+            <span><b>Rookie card</b><small>Mark this card as an RC</small></span>
+          </label>
+        </div>
+
+        <button id="addVaultBtn" class="primary-button" type="button">
+          <span id="saveCardLabel">Add to Vault</span><span>＋</span>
+        </button>
+      </section>
+
+      <section id="details" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="vault" type="button">‹</button>
+          <div><small>CARD DETAILS</small><h1 id="detailHeader">Card</h1></div>
+          <button id="deleteCardBtn" class="danger-action" type="button">Delete</button>
+        </header>
+
+        <div class="detail-gallery">
+          <div class="detail-image-wrap"><img id="detailImage" alt="Card image"></div>
+          <div class="image-tabs">
+            <button id="showFrontBtn" class="active" type="button">Front</button>
+            <button id="showBackBtn" type="button">Back</button>
+          </div>
+        </div>
+
+        <div class="detail-title">
+          <div>
+            <span id="detailRookie" class="mini-badge hidden">ROOKIE</span>
+            <h2 id="detailPlayer">Card</h2>
+            <p id="detailDescription"></p>
+          </div>
+          <strong id="detailValue">$0</strong>
+        </div>
+
+        <div class="detail-metrics">
+          <div><span>Paid</span><b id="detailPaid">$0</b></div>
+          <div><span>Profit</span><b id="detailProfit">$0</b></div>
+          <div><span>AI match</span><b id="detailConfidence">—</b></div>
+        </div>
+
+        <div class="form-sheet">
+          <div class="form-line"><label for="dGrade">Grade</label><input id="dGrade"></div>
+          <div class="form-line money-line"><label for="dPaid">Paid</label><input id="dPaid" inputmode="decimal"></div>
+          <div class="form-line money-line"><label for="dValue">Est. value</label><input id="dValue" inputmode="decimal"></div>
+        </div>
+        <button id="saveDetailBtn" class="primary-button" type="button"><span>Save changes</span><span>✓</span></button>
+      </section>
+
+      <section id="profile" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="home" type="button">‹</button>
+          <div><small>ACCOUNT</small><h1>Profile</h1></div>
+          <div class="header-spacer"></div>
+        </header>
+
+        <section class="profile-hero">
+          <div id="profileAvatar" class="profile-avatar">C</div>
+          <h2 id="profileName">Collector</h2>
+          <p id="profileEmail">Guest account</p>
+          <span id="accountModeBadge" class="account-badge">GUEST</span>
+        </section>
+
+        <div class="profile-stats">
+          <div><strong id="profileCards">0</strong><span>Cards</span></div>
+          <div><strong id="profileValue">$0</strong><span>Value</span></div>
+          <div><strong id="profileScans">0</strong><span>Scans</span></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title"><small>APPEARANCE</small><h2>Theme</h2></div>
+          <div class="theme-picker">
+            <button type="button" data-theme-choice="light">Light</button>
+            <button type="button" data-theme-choice="dark">Dark</button>
+            <button type="button" data-theme-choice="system">System</button>
+          </div>
+        </div>
+
+        <div class="settings-list">
+          <div><span>Collection storage</span><b id="storageMode">This device</b></div>
+          <div><span>AI scanner</span><b id="aiMode">Checking…</b></div>
+          <button id="accountActionBtn" type="button">Sign in</button>
+          <button id="clearDataBtn" class="danger-row" type="button">Clear local collection</button>
+        </div>
+
+        <p class="settings-footnote">When signed in, Card Vault can sync your vault through Firebase. Guest mode stays on this device.</p>
+      </section>
+    </main>
+
+    <nav id="tabbar" class="tabbar">
+      <button class="tab active" data-go="home" type="button"><span>⌂</span><small>Home</small></button>
+      <button class="tab" data-go="vault" type="button"><span>▦</span><small>Vault</small></button>
+      <button class="scan-tab" data-go="scan" type="button" aria-label="Scan a card"><span>✦</span></button>
+      <button class="tab" data-go="profile" type="button"><span>◉</span><small>Profile</small></button>
+    </nav>
   </div>
-</section>
 
-<section id="matches" class="screen">
-  <header class="screen-header">
-    <button class="round-btn" data-go="scan">‹</button>
-    <div><span class="micro">AI RESULTS</span><h1>Matches</h1></div>
-    <div class="round-placeholder"></div>
-  </header>
-  <p class="results-copy" id="matchSummary">Choose the match that looks exactly like your card.</p>
-  <div id="primaryMatch"></div>
-  <div id="alternateWrap" class="hidden">
-    <div class="row-head alt-head"><h2>Other possible matches</h2><span id="alternateCount"></span></div>
-    <div id="alternateMatches" class="alternate-list"></div>
-  </div>
-  <button class="outline-btn" data-go="scan">Scan again</button>
-</section>
+  <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-<section id="confirm" class="screen">
-  <header class="screen-header">
-    <button class="round-btn" data-go="matches">‹</button>
-    <div><span class="micro">CONFIRM</span><h1>Add to Vault</h1></div>
-    <div class="round-placeholder"></div>
-  </header>
-
-  <section class="confirm-hero">
-    <img id="confirmFront" alt="Selected card">
-    <div class="confirm-title"><span id="confirmConfidence">—</span><h2 id="confirmName">Card</h2><p id="confirmDescriptor"></p></div>
-  </section>
-
-  <div class="form-card">
-    <div class="form-row"><label>Player</label><input id="fPlayer"></div>
-    <div class="form-row"><label>Team</label><input id="fTeam"></div>
-    <div class="form-row"><label>Sport</label><select id="fSport"><option>Football</option><option>Basketball</option><option>Baseball</option><option>Hockey</option><option>Soccer</option><option>Other</option></select></div>
-    <div class="form-row"><label>Year</label><input id="fYear"></div>
-    <div class="form-row"><label>Set</label><input id="fSet"></div>
-    <div class="form-row"><label>Card #</label><input id="fNumber"></div>
-    <div class="form-row"><label>Parallel</label><input id="fParallel"></div>
-    <div class="form-row"><label>Serial #</label><input id="fSerial" placeholder="—"></div>
-    <div class="form-row"><label>Grade</label><input id="fGrade"></div>
-    <div class="form-row"><label>Paid</label><input id="fPaid" inputmode="decimal" placeholder="$0"></div>
-    <div class="form-row"><label>Est. value</label><input id="fValue" inputmode="decimal" placeholder="$0"></div>
-    <label class="rookie-toggle"><input id="fRookie" type="checkbox"><span></span><b>Rookie card</b></label>
-  </div>
-
-  <button id="addVaultBtn" class="black-btn"><span>Add to Vault</span><span>＋</span></button>
-</section>
-
-<section id="vault" class="screen">
-  <header class="screen-header">
-    <button class="round-btn" data-go="home">‹</button>
-    <div><span class="micro">COLLECTION</span><h1>My Vault</h1></div>
-    <div class="round-placeholder"></div>
-  </header>
-  <div class="filter-bar">
-    <input id="searchBox" type="search" placeholder="Search cards">
-    <select id="sportFilter"><option value="">All sports</option><option>Football</option><option>Basketball</option><option>Baseball</option><option>Hockey</option><option>Soccer</option><option>Other</option></select>
-  </div>
-  <div id="vaultList" class="vault-grid empty"><p>No cards yet.</p></div>
-</section>
-
-<section id="profile" class="screen">
-  <header class="screen-header">
-    <button class="round-btn" data-go="home">‹</button>
-    <div><span class="micro">PROFILE</span><h1>Collector</h1></div>
-    <div class="round-placeholder"></div>
-  </header>
-  <div class="profile-card"><div class="profile-avatar">CV</div><h2>Card Vault Collector</h2><p>Your collection lives here.</p></div>
-  <div class="profile-stats">
-    <div><b id="profileCards">0</b><span>Cards</span></div>
-    <div><b id="profileValue">$0</b><span>Value</span></div>
-    <div><b id="profileScans">0</b><span>Scans</span></div>
-  </div>
-  <div class="settings-list">
-    <div><span>AI scanner</span><b>Ready when configured</b></div>
-    <div><span>Storage</span><b>On this device</b></div>
-    <button id="clearData">Clear local data</button>
-  </div>
-</section>
-</main>
-
-<nav class="tabbar">
-  <button class="tab active" data-go="home"><span>⌂</span><small>Home</small></button>
-  <button class="tab" data-go="vault"><span>▦</span><small>Vault</small></button>
-  <button class="scan-tab" data-go="scan"><span>✦</span></button>
-  <button class="tab" data-go="profile"><span>◉</span><small>Profile</small></button>
-</nav>
-
-<div id="toast" class="toast hidden"></div>
-<button id="installBtn" class="hidden"></button>
-</div>
-<script src="/app.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

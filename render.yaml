@@ -11,3 +11,7 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3-flash-preview
+      - key: FIREBASE_WEB_CONFIG
+        sync: false
+      - key: APPLE_AUTH_ENABLED
+        value: "false"

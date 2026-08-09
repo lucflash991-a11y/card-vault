@@ -1,49 +1,72 @@
-# Card Vault v0.3 — Deploy Build
+# Card Vault v1.0
 
-This version is prepared for a free Render deployment and uses the Gemini API for real front/back card image recognition.
+Major rebuild of the Card Vault PWA.
 
-## Why this build
-- Render can host the Node/Express app on its free web-service tier for hobby testing.
-- Gemini 3 Flash currently has a free API tier.
-- Your Gemini API key stays server-side and is never shipped to Safari.
-- Card Vault remains installable from Safari using Add to Home Screen.
+## What changed
 
-## What you need
-1. A free GitHub account.
-2. A free Render account.
-3. A Google account and a Gemini API key from Google AI Studio.
+### Modern UI
+- Refined premium light mode
+- Full dark mode
+- Light / Dark / System appearance picker
+- New portfolio dashboard
+- Top-card highlight
+- Cleaner Vault cards and filters
+- New card detail screen with front/back viewer
+- Better mobile spacing and iPhone Home Screen layout
 
-## Deploy flow
-### 1. Put this project in GitHub
-Create a new GitHub repository called `card-vault`.
-Upload the contents of this project so `package.json`, `render.yaml`, `public/`, and `server/` are at the repository root.
+### Accounts
+- Firebase Authentication integration
+- Continue with Google
+- Sign in with Apple code path
+- Guest mode
+- Signed-in profile state
+- Firestore cloud collection sync
+- Guest-to-account collection migration
 
-### 2. Get a Gemini API key
-Open Google AI Studio and create a Gemini API key.
-Do not put the key into `public/app.js`, HTML, or GitHub.
+### AI scanner
+- Front/back photo processing
+- Safari-safe image loading
+- Confidence scores
+- Alternate matches
+- Confirmation editor
+- 50-second request timeout
+- clearer errors and status states
+- conservative identification prompt
 
-### 3. Deploy on Render
-In Render:
-- New → Blueprint, then connect the GitHub repository.
-- Render reads `render.yaml`.
-- When prompted for `GEMINI_API_KEY`, paste your Gemini key.
-- Deploy.
+### Bug fixes / hardening
+- Duplicate-card bug fixed with one stable scan ID per scan
+- Save button locks while writing
+- Firestore save uses the scan ID as the document ID, making repeated saves idempotent
+- Local save also replaces same ID rather than inserting duplicates
+- Existing exact duplicate scans are deduplicated during migration
+- Scan state fully resets after save
+- Photo replacement resets stale AI results
+- AI request cancellation
+- Service worker cache bumped and old caches removed
+- Express 5 wildcard crash fixed
+- API rate limit protection
+- Health/config endpoints
+- local/cloud storage modes separated
 
-After deployment Render gives you an HTTPS URL such as:
-`https://card-vault-xxxx.onrender.com`
+## Run locally
 
-### 4. Install on iPhone
-In Safari:
-- Open the Render URL.
-- Share.
-- Add to Home Screen.
-- Open Card Vault from the icon.
+```bash
+npm install
+npm start
+```
 
-## Free-tier notes
-Free hosting can sleep when idle, so the first load after inactivity may be slower.
-Gemini free-tier usage has quotas and availability limits.
-This build is intended for you and a few friends while testing.
+Open `http://localhost:3000`.
 
-## Important privacy note
-Google's pricing/docs indicate free-tier content may be used to improve Google's products.
-Do not upload anything sensitive. Sports-card photos are the intended input here.
+Gemini works when `GEMINI_API_KEY` is configured.
+Guest mode works without Firebase.
+See `FIREBASE_SETUP.md` to enable Google / cloud accounts and Apple support.
+
+## Deploy
+This repo includes `render.yaml`.
+
+For an existing Render service, replace the GitHub project files with this version.
+Keep your existing `GEMINI_API_KEY`.
+Add `FIREBASE_WEB_CONFIG` when Firebase is ready.
+
+## Important
+Apple sign-in cannot simply be activated by frontend code. Apple requires the web Sign in with Apple developer configuration before the Firebase Apple provider can work.
