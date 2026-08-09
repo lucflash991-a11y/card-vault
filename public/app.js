@@ -22,7 +22,52 @@ function getLocalCardImages(id){
 
 function hydrateLocalImages(card){
   const cached=getLocalCardImages(card.id);
-  return {...card,front:card.front||cached.front||"",back:card.back||cached.back||""};
+  return {
+    ...card,
+    front:cached.front||card.front||"",
+    back:cached.back||card.back||""
+  };
+}
+
+async function makeCloudThumbnail(dataUrl,maxSide=300,quality=.5){
+  if(!dataUrl || !String(dataUrl).startsWith("data:image/")) return "";
+  try{
+    const img=await loadImage(dataUrl);
+    const w0=img.naturalWidth||img.width;
+    const h0=img.naturalHeight||img.height;
+    const scale=Math.min(1,maxSide/Math.max(w0,h0));
+    const w=Math.max(1,Math.round(w0*scale));
+    const h=Math.max(1,Math.round(h0*scale));
+    const canvas=document.createElement("canvas");
+    canvas.width=w; canvas.height=h;
+    const ctx=canvas.getContext("2d",{alpha:false});
+    if(!ctx)return "";
+    ctx.drawImage(img,0,0,w,h);
+    return canvas.toDataURL("image/jpeg",quality);
+  }catch(err){
+    console.warn("Cloud thumbnail failed:",err);
+    return "";
+  }
+}
+
+async function prepareCloudCard(card){
+  // Originals stay local for best quality. Tiny thumbnails sync through Firestore.
+  const cloud={...card};
+  cloud.front=await makeCloudThumbnail(card.front,300,.5);
+  cloud.back=await makeCloudThumbnail(card.back,300,.5);
+
+  // Keep a large safety margin below Firestore's document-size limit.
+  let approx=new Blob([JSON.stringify(cloud)]).size;
+  if(approx>500000){
+    cloud.front=await makeCloudThumbnail(card.front,220,.42);
+    cloud.back=await makeCloudThumbnail(card.back,220,.42);
+    approx=new Blob([JSON.stringify(cloud)]).size;
+  }
+  if(approx>500000){
+    // Final fallback: sync the front thumbnail only instead of failing the save.
+    cloud.back="";
+  }
+  return cloud;
 }
 
 const money = (n) => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(Number(n||0));
@@ -465,11 +510,14 @@ async function prepareCardForCloud(card){
 
 async function persistCard(card){
   card=normalizeCard(card);
+
   if(currentUser && firebase?.db){
-    // Keep photos on this device. Firestore stores only portable card metadata.
-    // This avoids document-size/indexing problems entirely on the free tier.
+    // Preserve original photos on this device.
     saveLocalCardImages(card);
-    const cloudCard={...card,front:"",back:""};
+
+    // Sync compact front/back thumbnails so the card has images on every device.
+    const cloudCard=await prepareCloudCard(card);
+
     await firebase.setDoc(
       firebase.doc(firebase.db,"users",currentUser.uid,"cards",card.id),
       cloudCard,
@@ -478,7 +526,9 @@ async function persistCard(card){
   }else{
     const index=cards.findIndex(c=>c.id===card.id);
     if(index>=0)cards[index]=card;else cards.unshift(card);
-    cards=dedupeCards(cards);saveLocalCards();renderAll();
+    cards=dedupeCards(cards);
+    saveLocalCards();
+    renderAll();
   }
 }
 async function removeCard(id){

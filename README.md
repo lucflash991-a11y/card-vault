@@ -1,4 +1,4 @@
-# Card Vault v1.1.9
+# Card Vault v1.2.0
 
 Major rebuild of the Card Vault PWA.
 
@@ -150,3 +150,12 @@ Gemini now uses Google Search grounding to research the exact card on the live w
 - Price estimates are cached on-device for 12 hours per exact card identity so rescans do not repeatedly burn free API requests.
 - Automatic pricing uses the cache; the `Update Value` button forces one fresh attempt.
 - No billing is required by Card Vault itself.
+
+
+## v1.2.0 Cross-Device Card Photos
+- Card data and compact card thumbnails now sync through Firestore.
+- Original full-resolution scan photos remain cached on the device that captured them.
+- Other signed-in devices receive the synced front/back thumbnails automatically.
+- Cloud thumbnails are aggressively compressed to keep Firestore documents safely below the size limit.
+- If a record is unusually large, Card Vault falls back to syncing only the front thumbnail rather than failing the card save.
+- Existing v1.1.9 free-tier AI pricing behavior remains intact.
