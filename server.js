@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"1.0.7"});
+  res.json({version:"1.7.1"});
 });
 
 app.use((req,res,next)=>{
@@ -114,15 +114,28 @@ const matchSchema={
   },
   required:["confidence","player","team","sport","year","manufacturer","set","cardNumber","parallel","serialNumber","rookie","grade","evidence"]
 };
+const marketEstimateSchema={
+  type:"object",
+  properties:{
+    value:{type:"number"},
+    low:{type:"number"},
+    high:{type:"number"},
+    confidence:{type:"string",enum:["High","Medium","Low"]},
+    note:{type:"string"}
+  },
+  required:["value","low","high","confidence","note"]
+};
+
 const resultSchema={
   type:"object",
   properties:{
     primary:matchSchema,
     alternates:{type:"array",maxItems:3,items:matchSchema},
+    marketEstimate:marketEstimateSchema,
     imageQuality:{type:"string",enum:["good","usable","poor"]},
     warning:{type:"string"}
   },
-  required:["primary","alternates","imageQuality","warning"]
+  required:["primary","alternates","marketEstimate","imageQuality","warning"]
 };
 
 function getFirebaseConfig(){
@@ -130,6 +143,89 @@ function getFirebaseConfig(){
   if(!raw)return null;
   try{return JSON.parse(raw)}catch{return null}
 }
+
+const priceMemoryCache=new Map();
+function priceKey(body){
+  return [body.player,body.year,body.set,body.cardNumber,body.parallel,body.serialNumber,body.grade].map(v=>String(v||"").trim().toLowerCase()).join("|");
+}
+app.post("/api/price",async(req,res)=>{
+  try{
+    const {player="",team="",sport="",year="",set="",cardNumber="",parallel="",serialNumber="",grade=""}=req.body||{};
+    if(!player&&!set)return res.status(400).json({error:"Missing card identity"});
+    if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"AI market search is not configured."});
+
+    const key=priceKey(req.body||{});
+    const cached=priceMemoryCache.get(key);
+    if(cached && Date.now()-cached.savedAt<24*60*60*1000){
+      return res.json({...cached.data,cached:true});
+    }
+
+    const scanModels=String(process.env.GEMINI_SCAN_MODELS||"gemini-3.1-flash-lite,gemini-2.5-flash")
+      .split(",").map(x=>x.trim()).filter(Boolean);
+    const exactCard=[year,set,player,cardNumber?`#${cardNumber}`:"",parallel,serialNumber,grade].filter(Boolean).join(" ");
+    const prompt=`You are Card Vault's OPTIONAL live-market refresh tool.
+Search the live web for this exact sports card or the closest legitimate comparables.
+
+Player: ${player}
+Team: ${team}
+Sport: ${sport}
+Year: ${year}
+Set: ${set}
+Card number: ${cardNumber}
+Parallel: ${parallel}
+Serial: ${serialNumber}
+Grade/condition: ${grade}
+
+Prefer eBay evidence when it appears in search, then reputable card-market sources.
+Do not mix different parallels, lots, packs, reprints, or obviously different grades.
+Asking prices are not sold prices, so reduce confidence if only asking prices are found.
+Never invent sales or prices.
+
+Return ONLY JSON:
+{"value":18.50,"low":14.00,"high":23.00,"confidence":"High|Medium|Low","note":"short basis for estimate","comparablesUsed":5}
+
+Exact search phrase: ${exactCard}`;
+
+    const response=await fetch(endpoint,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
+      body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt}]}],tools:[{google_search:{}}],generationConfig:{temperature:0.15}})
+    });
+    const data=await response.json();
+    if(response.status===429)return res.status(429).json({error:"Live AI pricing is cooling down. Your scan estimate is still available."});
+    if(!response.ok){
+      console.error("Gemini pricing error:",response.status,data);
+      return res.status(502).json({error:"Live market refresh could not run."});
+    }
+
+    const candidate=data?.candidates?.[0];
+    let text=candidate?.content?.parts?.map(p=>p.text||"").join("")||"";
+    text=text.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();
+    const jsonMatch=text.match(/\{[\s\S]*\}/);
+    if(!jsonMatch)return res.status(502).json({error:"Live market refresh returned an unreadable result."});
+    const parsed=JSON.parse(jsonMatch[0]);
+    const value=Number(parsed.value),low=Number(parsed.low),high=Number(parsed.high);
+    if(!Number.isFinite(value)||!Number.isFinite(low)||!Number.isFinite(high))return res.status(502).json({error:"Live market refresh returned invalid numbers."});
+
+    const chunks=candidate?.groundingMetadata?.groundingChunks||[];
+    const sources=[];const seen=new Set();
+    for(const chunk of chunks){
+      const web=chunk?.web;if(!web?.uri||seen.has(web.uri))continue;seen.add(web.uri);
+      sources.push({title:web.title||"Web source",url:web.uri});if(sources.length>=5)break;
+    }
+    const result={
+      value:Math.round(value*100)/100,low:Math.round(Math.min(low,high)*100)/100,high:Math.round(Math.max(low,high)*100)/100,
+      confidence:["High","Medium","Low"].includes(parsed.confidence)?parsed.confidence:"Low",
+      note:String(parsed.note||"Live AI estimate based on current web comparables.").slice(0,220),
+      comps:Number(parsed.comparablesUsed||sources.length||0),source:"Live AI market estimate",sources
+    };
+    priceMemoryCache.set(key,{savedAt:Date.now(),data:result});
+    res.json(result);
+  }catch(e){
+    console.error("Price endpoint error:",e);
+    res.status(500).json({error:"Live market refresh failed."});
+  }
+});
 
 app.get("/api/config",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
@@ -153,7 +249,7 @@ app.get("/api/health",(req,res)=>{
     aiConfigured:Boolean(process.env.GEMINI_API_KEY),
     firebaseConfigured:Boolean(getFirebaseConfig()),
     appleAuthEnabled:String(process.env.APPLE_AUTH_ENABLED||"false").toLowerCase()==="true",
-    model:process.env.GEMINI_MODEL||"gemini-3-flash-preview"
+    model:String(process.env.GEMINI_SCAN_MODELS||"gemini-3.1-flash-lite,gemini-2.5-flash")
   });
 });
 
@@ -173,7 +269,12 @@ The two images are the FRONT and BACK of the SAME physical sports card.
 
 Use visible evidence only: player name, team, manufacturer, logos, copyright text,
 set name, year, card number, rookie marks, serial numbering, foil/color/pattern,
-borders, inscriptions and design.
+borders, inscriptions, card design, grading slab label, grading company, and visible slab grade.
+
+Be especially careful about parallels and variations. Compare border color, foil treatment,
+pattern, serial numbering, logos, card-number placement, and back-design details before
+claiming an exact match. If a slab is visible, report the grading company/grade in evidence
+and use the visible grade. If the card is raw, grade must remain "Raw".
 
 Return one PRIMARY exact-card match and up to 3 useful ALTERNATES.
 Confidence is 0-100 confidence in the EXACT card including parallel/variation.
@@ -181,7 +282,11 @@ Do not give high confidence merely because the player is obvious.
 If exact parallel or variation is uncertain, lower confidence and use alternates.
 Never invent a serial number. Use an empty string when unreadable.
 If a grading slab is visibly present, report the visible slab grade; otherwise grade is "Raw".
-Do not estimate price. Do not assign a numeric condition grade from card appearance.
+Also provide a ROUGH market estimate for the PRIMARY card in marketEstimate using general card-market knowledge.
+This estimate is intentionally approximate and must NOT claim to be live eBay sold data.
+Be conservative. Common modern raw base cards should generally be valued modestly.
+Widen the low/high range and lower confidence when the exact parallel, grade, or market is uncertain.
+Do not assign a numeric condition grade from raw-card appearance.
 Evidence should contain brief visible clues supporting each candidate.
 If image quality prevents reliable identification, say so in warning.
 `;
@@ -199,23 +304,42 @@ If image quality prevents reliable identification, say so in warning.
       generationConfig:{
         responseMimeType:"application/json",
         responseJsonSchema:resultSchema,
-        temperature:0.15
+        temperature:0.1,
+        maxOutputTokens:1800
       }
     };
 
-    const response=await fetch(endpoint,{
-      method:"POST",
-      headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
-      body:JSON.stringify(body)
-    });
-    const data=await response.json();
+    let response=null;
+    let data=null;
+    let usedModel="";
+    let lastStatus=0;
 
-    if(!response.ok){
-      console.error("Gemini error",response.status,data);
-      if(response.status===429)return res.status(429).json({error:"The AI free-tier limit was reached. Try again later."});
-      if(response.status===400)return res.status(502).json({error:"The AI model rejected this scan. Try clearer photos."});
-      return res.status(502).json({error:"The AI service could not process this scan."});
+    for(const model of scanModels){
+      const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+      response=await fetch(endpoint,{
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
+        body:JSON.stringify(body)
+      });
+      data=await response.json();
+      lastStatus=response.status;
+      usedModel=model;
+
+      if(response.ok)break;
+
+      console.warn("Gemini scan model failed",model,response.status,data?.error?.message||"");
+      // Only route to the next model for quota/capacity/model-availability failures.
+      if(![404,429,503].includes(response.status))break;
     }
+
+    if(!response?.ok){
+      console.error("All Gemini scan models failed",lastStatus,data);
+      if(lastStatus===429)return res.status(429).json({error:"The free AI quota is temporarily exhausted across the available scan models. Try again after the quota resets."});
+      if(lastStatus===400)return res.status(502).json({error:"The AI model rejected this scan. Try clearer photos."});
+      return res.status(502).json({error:"The AI scan service is temporarily unavailable."});
+    }
+
+    res.setHeader("X-Card-Vault-AI-Model",usedModel);
 
     let text=data?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
     text=text.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();
@@ -236,5 +360,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v1.0 running on port ${port}`);
+  console.log(`Card Vault v1.7.1 running on port ${port}`);
 });

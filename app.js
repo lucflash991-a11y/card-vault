@@ -5,6 +5,10 @@ const SCAN_KEY = "cardvault.v10.scans";
 const THEME_KEY = "cardvault.v10.theme";
 const GUEST_KEY = "cardvault.v10.guest";
 const MIGRATION_KEY = "cardvault.v10.migrated";
+const IDENTIFY_CACHE_PREFIX="cardvault.identify.v140.";
+const IDENTIFY_CACHE_TTL=7*24*60*60*1000;
+const PORTFOLIO_HISTORY_KEY="cardvault.portfolio.v140.history";
+const PRICE_FRESH_MS=24*60*60*1000;
 const IMAGE_CACHE_PREFIX = "cardvault.v106.image.";
 
 function saveLocalCardImages(card){
@@ -22,7 +26,52 @@ function getLocalCardImages(id){
 
 function hydrateLocalImages(card){
   const cached=getLocalCardImages(card.id);
-  return {...card,front:card.front||cached.front||"",back:card.back||cached.back||""};
+  return {
+    ...card,
+    front:cached.front||card.front||"",
+    back:cached.back||card.back||""
+  };
+}
+
+async function makeCloudThumbnail(dataUrl,maxSide=300,quality=.5){
+  if(!dataUrl || !String(dataUrl).startsWith("data:image/")) return "";
+  try{
+    const img=await loadImage(dataUrl);
+    const w0=img.naturalWidth||img.width;
+    const h0=img.naturalHeight||img.height;
+    const scale=Math.min(1,maxSide/Math.max(w0,h0));
+    const w=Math.max(1,Math.round(w0*scale));
+    const h=Math.max(1,Math.round(h0*scale));
+    const canvas=document.createElement("canvas");
+    canvas.width=w; canvas.height=h;
+    const ctx=canvas.getContext("2d",{alpha:false});
+    if(!ctx)return "";
+    ctx.drawImage(img,0,0,w,h);
+    return canvas.toDataURL("image/jpeg",quality);
+  }catch(err){
+    console.warn("Cloud thumbnail failed:",err);
+    return "";
+  }
+}
+
+async function prepareCloudCard(card){
+  // Originals stay local for best quality. Tiny thumbnails sync through Firestore.
+  const cloud={...card};
+  cloud.front=await makeCloudThumbnail(card.front,300,.5);
+  cloud.back=await makeCloudThumbnail(card.back,300,.5);
+
+  // Keep a large safety margin below Firestore's document-size limit.
+  let approx=new Blob([JSON.stringify(cloud)]).size;
+  if(approx>500000){
+    cloud.front=await makeCloudThumbnail(card.front,220,.42);
+    cloud.back=await makeCloudThumbnail(card.back,220,.42);
+    approx=new Blob([JSON.stringify(cloud)]).size;
+  }
+  if(approx>500000){
+    // Final fallback: sync the front thumbnail only instead of failing the save.
+    cloud.back="";
+  }
+  return cloud;
 }
 
 const money = (n) => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(Number(n||0));
@@ -40,6 +89,211 @@ let selectedMatch = null;
 let aiResult = null;
 let activeScanId = null;
 let savingCard = false;
+let pricingState={status:"idle",value:null,low:null,high:null,confidence:null,comps:0,source:"pending"};
+const PRICE_CACHE_PREFIX="cardvault.price.v119.";
+const PRICE_CACHE_TTL=24*60*60*1000; // 24 hours
+
+
+async function tinyFingerprint(dataUrl){
+  try{
+    const img=await loadImage(dataUrl);
+    const canvas=document.createElement("canvas");canvas.width=16;canvas.height=16;
+    const ctx=canvas.getContext("2d",{willReadFrequently:true});ctx.drawImage(img,0,0,16,16);
+    const d=ctx.getImageData(0,0,16,16).data;
+    let out="";
+    for(let i=0;i<d.length;i+=16){
+      const y=Math.round((.2126*d[i]+.7152*d[i+1]+.0722*d[i+2])/16).toString(16);
+      out+=y;
+    }
+    return out;
+  }catch{return String(dataUrl?.length||0)}
+}
+async function stableImageKey(){
+  try{
+    const input=`${await tinyFingerprint(frontData)}|${await tinyFingerprint(backData)}`;
+    const bytes=new TextEncoder().encode(input);
+    const digest=await crypto.subtle.digest("SHA-256",bytes);
+    return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
+  }catch{return `${frontData.length}:${backData.length}`}
+}
+
+function readIdentifyCache(key){
+  try{
+    const v=JSON.parse(localStorage.getItem(IDENTIFY_CACHE_PREFIX+key)||"null");
+    if(!v||Date.now()-Number(v.savedAt||0)>IDENTIFY_CACHE_TTL)return null;
+    return v.data||null;
+  }catch{return null}
+}
+function writeIdentifyCache(key,data){
+  try{localStorage.setItem(IDENTIFY_CACHE_PREFIX+key,JSON.stringify({savedAt:Date.now(),data}))}catch{}
+}
+
+function recordPortfolioSnapshot(){
+  const total=cards.reduce((s,c)=>s+Number(c.value||0),0);
+  let history=[];
+  try{history=JSON.parse(localStorage.getItem(PORTFOLIO_HISTORY_KEY)||"[]")}catch{}
+  if(!Array.isArray(history))history=[];
+  const day=new Date().toISOString().slice(0,10);
+  const last=history[history.length-1];
+  if(last?.day===day){last.value=total;last.at=Date.now()}
+  else history.push({day,value:total,at:Date.now()});
+  history=history.slice(-90);
+  localStorage.setItem(PORTFOLIO_HISTORY_KEY,JSON.stringify(history));
+}
+function portfolioHistory(){
+  try{
+    const v=JSON.parse(localStorage.getItem(PORTFOLIO_HISTORY_KEY)||"[]");
+    return Array.isArray(v)?v:[];
+  }catch{return []}
+}
+function priceAgeText(ts){
+  if(!ts)return "Not refreshed";
+  const diff=Math.max(0,Date.now()-ts);
+  const mins=Math.floor(diff/60000);
+  if(mins<2)return "Updated just now";
+  if(mins<60)return `Updated ${mins}m ago`;
+  const hrs=Math.floor(mins/60);
+  if(hrs<24)return `Updated ${hrs}h ago`;
+  const days=Math.floor(hrs/24);
+  return `Updated ${days}d ago`;
+}
+function pushPriceHistory(card,value,source){
+  const arr=Array.isArray(card.priceHistory)?[...card.priceHistory]:[];
+  const n=Number(value||0);
+  if(!Number.isFinite(n)||n<0)return arr.slice(-30);
+  const last=arr[arr.length-1];
+  if(!last || Math.abs(Number(last.value)-n)>.001 || Date.now()-Number(last.at||0)>6*60*60*1000){
+    arr.push({at:Date.now(),value:n,source:source||""});
+  }
+  return arr.slice(-30);
+}
+
+function priceFingerprint(){
+  return [
+    $("fPlayer")?.value||"",
+    $("fYear")?.value||"",
+    $("fSet")?.value||"",
+    $("fNumber")?.value||"",
+    $("fParallel")?.value||"",
+    $("fSerial")?.value||"",
+    $("fGrade")?.value||""
+  ].map(v=>String(v).trim().toLowerCase()).join("|");
+}
+
+function readPriceCache(){
+  try{
+    const key=priceFingerprint();
+    if(!key.replace(/\|/g,""))return null;
+    const parsed=JSON.parse(localStorage.getItem(PRICE_CACHE_PREFIX+key)||"null");
+    if(!parsed || !parsed.savedAt || Date.now()-parsed.savedAt>PRICE_CACHE_TTL)return null;
+    return parsed.data||null;
+  }catch{return null}
+}
+
+function writePriceCache(data){
+  try{
+    const key=priceFingerprint();
+    if(!key.replace(/\|/g,""))return;
+    localStorage.setItem(PRICE_CACHE_PREFIX+key,JSON.stringify({savedAt:Date.now(),data}));
+  }catch(err){console.warn("Price cache failed:",err)}
+}
+function renderPricing(){
+  const v=$("marketValue"),m=$("priceMeta"),r=$("priceRange"),c=$("priceConfidence"),b=$("updateValueBtn"),sources=$("priceSources");
+  if(!v)return;
+  b.disabled=pricingState.status==="loading";
+  b.textContent=pricingState.status==="loading"?"Refreshing…":"Live refresh";
+  if(sources){sources.innerHTML="";sources.classList.add("hidden")}
+
+  if(pricingState.status==="loading"){
+    v.textContent=pricingState.value!=null?`$${Number(pricingState.value).toFixed(2)}`:"Checking…";
+    m.textContent="Optional live refresh • cached for 24 hours";
+    r.classList.add("hidden");c.classList.add("hidden");return;
+  }
+
+  if(pricingState.value!=null){
+    v.textContent=`$${Number(pricingState.value).toFixed(2)}`;
+    const label=pricingState.source||"Scan estimate";
+    m.textContent=`${label}${pricingState.updatedAt?` • ${priceAgeText(pricingState.updatedAt)}`:" • included with scan"}`;
+    if(pricingState.low!=null&&pricingState.high!=null){
+      r.textContent=`Estimated range $${Number(pricingState.low).toFixed(2)}–$${Number(pricingState.high).toFixed(2)}`;
+      r.classList.remove("hidden");
+    }else r.classList.add("hidden");
+    if(pricingState.confidence){
+      c.textContent=`Pricing confidence: ${pricingState.confidence}${pricingState.note?` • ${pricingState.note}`:""}`;
+      c.classList.remove("hidden");
+    }else c.classList.add("hidden");
+    if(sources&&Array.isArray(pricingState.sources)&&pricingState.sources.length){
+      pricingState.sources.slice(0,5).forEach((src,i)=>{
+        const a=document.createElement("a");a.className="price-source-link";a.href=src.url;a.target="_blank";a.rel="noopener noreferrer";a.textContent=src.title||`Source ${i+1}`;sources.appendChild(a)
+      });
+      sources.classList.remove("hidden");
+    }
+    return;
+  }
+  v.textContent="Not priced yet";
+  m.textContent="A rough value will come from the same AI scan — no extra request.";
+  r.classList.add("hidden");c.classList.add("hidden");
+}
+
+async function updateMarketValue(force=false){
+  if(!selectedMatch)return toast("Identify a card first");
+
+  if(!force){
+    const cached=readPriceCache();
+    if(cached){
+      pricingState={...cached,status:"ready"};
+      $("fValue").value=Number(cached.value).toFixed(2);
+      renderPricing();
+      return;
+    }
+    return; // automatic flow never makes a second AI request
+  }
+
+  const stale=readPriceCache();
+  pricingState={...(stale||pricingState),status:"loading"};
+  renderPricing();
+
+  try{
+    const payload={
+      player:$("fPlayer").value.trim(),team:$("fTeam").value.trim(),sport:$("fSport").value,
+      year:$("fYear").value.trim(),set:$("fSet").value.trim(),cardNumber:$("fNumber").value.trim(),
+      parallel:$("fParallel").value.trim(),serialNumber:$("fSerial").value.trim(),grade:$("fGrade").value.trim()
+    };
+    const res=await fetch("/api/price",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const d=await res.json().catch(()=>({}));
+
+    if(res.status===429){
+      if(stale){
+        pricingState={...stale,status:"ready",note:`${stale.note||""} • Live refresh is cooling down.`};
+        $("fValue").value=Number(stale.value).toFixed(2);
+        renderPricing();
+        toast("Using cached value while live AI cools down.");
+        return;
+      }
+      pricingState={...pricingState,status:"ready",note:"Live refresh is cooling down. Scan estimate kept."};
+      renderPricing();
+      toast("Live pricing is cooling down — keeping the scan estimate.");
+      return;
+    }
+    if(!res.ok)throw new Error(d.error||`Pricing request failed (${res.status})`);
+
+    pricingState={
+      status:"ready",value:d.value,low:d.low,high:d.high,confidence:d.confidence||"Medium",
+      comps:d.sources?.length||d.comps||0,source:d.source||"Live AI market estimate",
+      sources:d.sources||[],note:d.note||"",updatedAt:Date.now()
+    };
+    $("fValue").value=Number(d.value).toFixed(2);
+    writePriceCache(pricingState);
+    renderPricing();
+  }catch(e){
+    console.error("Pricing error:",e);
+    if(stale){
+      pricingState={...stale,status:"ready",note:`${stale.note||""} • Refresh unavailable.`};
+      $("fValue").value=Number(stale.value).toFixed(2);renderPricing();
+    }
+    toast("Live refresh unavailable — your current estimate is safe.");
+  }
+}
 let analyzeController = null;
 let firebase = null;
 let authMode = "guest";
@@ -47,6 +301,9 @@ let currentUser = null;
 let unsubscribeCards = null;
 let currentThemeChoice = localStorage.getItem(THEME_KEY) || "system";
 let isNavigatingAuth = false;
+let scanMode="single";
+let batchSessionCount=0;
+let selectedCollection="";
 
 function setLoginBusy(busy, provider="google"){
   const google=$("googleSignIn");
@@ -105,6 +362,7 @@ function dedupeCards(input){
 }
 
 function normalizeCard(c){
+  const history=Array.isArray(c.priceHistory)?c.priceHistory:[];
   return {
     id:c.id || uid(),
     player:c.player || "Unknown card",
@@ -119,7 +377,19 @@ function normalizeCard(c){
     paid:Number(c.paid || 0),
     value:Number(c.value || 0),
     rookie:Boolean(c.rookie),
+    favorite:Boolean(c.favorite),
+    notes:String(c.notes||""),
+    collection:String(c.collection||""),
+    tags:Array.isArray(c.tags)?c.tags.map(String):String(c.tags||"").split(",").map(x=>x.trim()).filter(Boolean),
     aiConfidence:Number(c.aiConfidence || c.confidence || 0),
+    priceSource:String(c.priceSource||""),
+    priceConfidence:String(c.priceConfidence||""),
+    priceLow:Number(c.priceLow||0),
+    priceHigh:Number(c.priceHigh||0),
+    priceNote:String(c.priceNote||""),
+    priceUpdatedAt:Number(c.priceUpdatedAt||0),
+    priceSources:Array.isArray(c.priceSources)?c.priceSources.slice(0,5):[],
+    priceHistory:history.slice(-30).map(x=>({at:Number(x.at||0),value:Number(x.value||0),source:String(x.source||"")})).filter(x=>x.at&&Number.isFinite(x.value)),
     front:c.front || "",
     back:c.back || "",
     createdAt:Number(c.createdAt || Date.now())
@@ -196,20 +466,138 @@ function renderProfile(){
   $("accountActionBtn").textContent=currentUser ? "Sign out" : "Sign in";
 }
 
+function renderValueChart(){
+  const svg=$("valueChart");if(!svg)return;
+  let hist=portfolioHistory().slice(-30);
+  const current=cards.reduce((s,c)=>s+Number(c.value||0),0);
+
+  if(!hist.length)hist=[{value:current,at:Date.now(),day:new Date().toISOString().slice(0,10)}];
+
+  const values=hist.map(x=>Number(x.value||0));
+  const max=Math.max(...values,1);
+  const min=Math.min(...values,0);
+  const range=Math.max(1,max-min);
+
+  const points=values.map((v,i)=>{
+    const x=values.length===1?160:(i/(values.length-1))*312+4;
+    const y=112-((v-min)/range)*88;
+    return [x,y];
+  });
+
+  const line=points.map(p=>p.join(",")).join(" ");
+  const fill=`4,120 ${line} 316,120`;
+
+  svg.innerHTML=`
+    <defs>
+      <linearGradient id="vaultFill" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="var(--accent)" stop-opacity=".30"/>
+        <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <line class="chart-grid-line" x1="0" x2="320" y1="26" y2="26"/>
+    <line class="chart-grid-line" x1="0" x2="320" y1="68" y2="68"/>
+    <line class="chart-grid-line" x1="0" x2="320" y1="110" y2="110"/>
+    <polygon points="${fill}" fill="url(#vaultFill)"/>
+    <polyline class="chart-line" points="${line}"/>
+  `;
+
+  if(points.length){
+    const lastPoint=points.at(-1);
+    svg.insertAdjacentHTML("beforeend",`
+      <circle cx="${lastPoint[0]}" cy="${lastPoint[1]}" r="7" fill="var(--surface)" stroke="var(--accent)" stroke-width="3"/>
+      <circle cx="${lastPoint[0]}" cy="${lastPoint[1]}" r="2.5" fill="var(--accent)"/>
+    `);
+  }
+
+  const first=values[0]||0;
+  const last=values.at(-1)||0;
+  const delta=last-first;
+  const pct=first>0 ? (delta/first)*100 : 0;
+
+  $("historyCurrentValue").textContent=money(last);
+  $("chartStart").textContent=money(first);
+  $("chartEnd").textContent=money(last);
+  $("chartChange").textContent=`${delta>=0?"+":""}${money(delta)}`;
+  $("chartChange").style.color=delta<0?"var(--danger)":delta>0?"var(--good)":"var(--muted)";
+
+  const pill=$("historyChangePill");
+  pill.className="history-change "+(delta>0?"positive":delta<0?"negative":"neutral");
+  if(values.length<2){
+    pill.textContent="Tracking starts now";
+  }else{
+    pill.textContent=`${delta>=0?"▲":"▼"} ${Math.abs(pct).toFixed(1)}% • ${delta>=0?"+":""}${money(delta)}`;
+  }
+
+  const startDate=hist[0]?.day ? new Date(hist[0].day+"T12:00:00") : new Date(hist[0]?.at||Date.now());
+  const endDate=hist.at(-1)?.day ? new Date(hist.at(-1).day+"T12:00:00") : new Date(hist.at(-1)?.at||Date.now());
+
+  const dateFmt=new Intl.DateTimeFormat("en-US",{month:"short",day:"numeric"});
+  $("historyStartLabel").textContent=dateFmt.format(startDate);
+  $("historyEndLabel").textContent=values.length>1?dateFmt.format(endDate):"Today";
+}
+function renderSportBreakdown(){
+  const wrap=$("sportBreakdown");if(!wrap)return;
+  if(!cards.length){wrap.innerHTML='<p class="muted-copy">Add cards to see your collection mix.</p>';return}
+  const groups={};
+  cards.forEach(c=>{const k=c.sport||"Other";groups[k]=(groups[k]||0)+Number(c.value||0)});
+  const total=Object.values(groups).reduce((a,b)=>a+b,0)||cards.length;
+  if(total===cards.length && Object.values(groups).every(v=>v===0)){
+    Object.keys(groups).forEach(k=>groups[k]=cards.filter(c=>(c.sport||"Other")===k).length);
+  }
+  const denom=Object.values(groups).reduce((a,b)=>a+b,0)||1;
+  wrap.innerHTML=Object.entries(groups).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([sport,val])=>{
+    const pct=Math.round(val/denom*100);
+    return `<div class="sport-row"><span>${esc(sport)}</span><div class="sport-bar"><i style="width:${pct}%"></i></div><b>${pct}%</b></div>`;
+  }).join("");
+}
+
+function cardMovement(c){
+  const h=Array.isArray(c.priceHistory)?c.priceHistory:[];
+  if(h.length<2)return 0;
+  return Number(h.at(-1).value||0)-Number(h[0].value||0);
+}
+function renderMovers(){
+  const eligible=cards.filter(c=>Array.isArray(c.priceHistory)&&c.priceHistory.length>=2);
+  const gain=[...eligible].sort((a,b)=>cardMovement(b)-cardMovement(a))[0];
+  const lose=[...eligible].sort((a,b)=>cardMovement(a)-cardMovement(b))[0];
+
+  const render=(id,c,type)=>{
+    const el=$(id);if(!el)return;
+    if(!c){el.className="mover-card empty-mover";el.textContent="No price history yet";el.onclick=null;return}
+    const move=cardMovement(c);
+    el.className="mover-card";
+    el.innerHTML=`<strong>${esc(c.player)}</strong><span class="${move>=0?"up":"down"}">${move>=0?"+":""}${money(move)}</span><span>${esc(cardDescription(c))}</span>`;
+    el.onclick=()=>openDetails(c.id);
+  };
+  render("topGainer",gain,"gain");render("topLoser",lose,"lose");
+}
+function renderRankings(){
+  const aggregate=(key)=>{
+    const map={};
+    cards.forEach(c=>{
+      const k=String(c[key]||"Unknown").trim()||"Unknown";
+      map[k]=(map[k]||0)+Number(c.value||0);
+    });
+    return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  };
+  const draw=(id,rows)=>{
+    const el=$(id);if(!el)return;
+    el.innerHTML=rows.length?rows.map(([name,val],i)=>`<div class="rank-row"><i>${i+1}</i><span>${esc(name)}</span><b>${money(val)}</b></div>`).join(""):'<p class="muted-copy">No data yet.</p>';
+  };
+  draw("topPlayers",aggregate("player"));draw("topSets",aggregate("set"));
+}
 function stats(){
   const total=cards.reduce((s,c)=>s+Number(c.value||0),0);
   const paid=cards.reduce((s,c)=>s+Number(c.paid||0),0);
   const profit=total-paid;
   const rookies=cards.filter(c=>c.rookie).length;
-  $("homeValue").textContent=money(total);
-  $("homeCards").textContent=cards.length;
-  $("homeScans").textContent=scans;
-  $("homeRookies").textContent=rookies;
-  $("homeProfit").textContent=`${profit>=0?"+":""}${money(profit)}`;
-  $("homeProfit").style.color=profit<0?"#ff9ba1":"";
-  $("profileCards").textContent=cards.length;
-  $("profileValue").textContent=money(total);
-  $("profileScans").textContent=scans;
+  const avg=cards.length?total/cards.length:0;
+  $("homeValue").textContent=money(total);$("homeCards").textContent=cards.length;$("homeScans").textContent=scans;$("homeRookies").textContent=rookies;
+  $("homeProfit").textContent=`${profit>=0?"+":""}${money(profit)}`;$("homeProfit").style.color=profit<0?"#ff9ba1":"";
+  $("profileCards").textContent=cards.length;$("profileValue").textContent=money(total);$("profileScans").textContent=scans;
+  $("dashPaid").textContent=money(paid);$("dashProfit").textContent=`${profit>=0?"+":""}${money(profit)}`;$("dashProfit").style.color=profit<0?"var(--danger)":"var(--good)";
+  $("dashAverage").textContent=money(avg);
+  recordPortfolioSnapshot();renderValueChart();renderSportBreakdown();renderMovers();renderRankings();
 }
 
 function cardDescription(c){
@@ -217,9 +605,9 @@ function cardDescription(c){
 }
 function createCardTile(c){
   const btn=document.createElement("button");
-  btn.type="button";btn.className="collection-card";btn.dataset.cardId=c.id;
+  btn.type="button";btn.className="collection-card"+(c.favorite?" favorite-card":"");btn.dataset.cardId=c.id;
   btn.innerHTML=`
-    <img src="${c.front || "/icons/card-placeholder.svg"}" alt="${esc(c.player)} card">
+    ${c.favorite?'<span class="fav-corner">★</span>':""}<img src="${c.front || "/icons/card-placeholder.svg"}" alt="${esc(c.player)} card">
     <div class="collection-copy">
       <h3>${esc(c.player)}</h3>
       <p>${esc(cardDescription(c))}</p>
@@ -241,17 +629,35 @@ function renderFeatured(){
 }
 function filteredCards(){
   const q=$("searchBox").value.toLowerCase().trim();
+  const gradeMode=$("gradeFilter")?.value||"";
+  const favMode=$("favoriteFilter")?.value||"";
+  const collectionMode=$("collectionFilter")?.value||"";
+
   let list=cards.filter(c=>{
-    const blob=[c.player,c.team,c.sport,c.year,c.set,c.number,c.parallel,c.grade].join(" ").toLowerCase();
-    return blob.includes(q) && (!selectedSport || c.sport===selectedSport);
+    const blob=[c.player,c.team,c.sport,c.year,c.set,c.number,c.parallel,c.grade,c.collection,...(c.tags||[])].join(" ").toLowerCase();
+    const raw=String(c.grade||"Raw").trim().toLowerCase()==="raw" || !String(c.grade||"").trim();
+    return blob.includes(q)
+      && (!selectedSport || c.sport===selectedSport)
+      && (!gradeMode || (gradeMode==="raw"?raw:!raw))
+      && (!favMode || c.favorite)
+      && (!collectionMode || c.collection===collectionMode);
   });
+
   const sort=$("sortFilter").value;
   if(sort==="value") list.sort((a,b)=>Number(b.value||0)-Number(a.value||0));
+  else if(sort==="profit") list.sort((a,b)=>(Number(b.value||0)-Number(b.paid||0))-(Number(a.value||0)-Number(a.paid||0)));
   else if(sort==="player") list.sort((a,b)=>String(a.player).localeCompare(String(b.player)));
   else list.sort((a,b)=>Number(b.createdAt||0)-Number(a.createdAt||0));
   return list;
 }
 function renderVault(){
+  const collectionSelect=$("collectionFilter");
+  if(collectionSelect){
+    const current=collectionSelect.value;
+    const collections=[...new Set(cards.map(c=>c.collection).filter(Boolean))].sort();
+    collectionSelect.innerHTML='<option value="">All collections</option>'+collections.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
+    if(collections.includes(current))collectionSelect.value=current;
+  }
   const list=$("vaultList");list.innerHTML="";
   const filtered=filteredCards();
   list.className="card-grid"+(filtered.length?"":" empty-state");
@@ -268,6 +674,9 @@ function renderAll(){stats();renderVault();renderProfile();}
 
 $("searchBox").addEventListener("input",renderVault);
 $("sortFilter").addEventListener("change",renderVault);
+$("gradeFilter")?.addEventListener("change",renderVault);
+$("favoriteFilter")?.addEventListener("change",renderVault);
+$("collectionFilter")?.addEventListener("change",renderVault);
 $("sportChips").addEventListener("click",e=>{
   const b=e.target.closest("[data-sport]");if(!b)return;
   selectedSport=b.dataset.sport;
@@ -278,26 +687,46 @@ $("sportChips").addEventListener("click",e=>{
 function openDetails(id){
   const c=cards.find(x=>x.id===id);if(!c)return;
   currentDetailId=id;detailSide="front";
-  $("detailHeader").textContent=c.player;
-  $("detailPlayer").textContent=c.player;
-  $("detailDescription").textContent=cardDescription(c);
-  $("detailValue").textContent=money(c.value);
-  $("detailPaid").textContent=money(c.paid);
+  $("detailHeader").textContent=c.player;$("detailPlayer").textContent=c.player;$("detailDescription").textContent=cardDescription(c);
+  $("detailValue").textContent=money(c.value);$("detailPaid").textContent=money(c.paid);
   const p=Number(c.value)-Number(c.paid);
-  $("detailProfit").textContent=`${p>=0?"+":""}${money(p)}`;
-  $("detailProfit").style.color=p<0?"var(--danger)":"var(--good)";
-  $("detailConfidence").textContent=c.aiConfidence?`${Math.round(c.aiConfidence)}%`:"—";
-  $("detailRookie").classList.toggle("hidden",!c.rookie);
-  $("dGrade").value=c.grade||"";
-  $("dPaid").value=c.paid||"";
-  $("dValue").value=c.value||"";
-  renderDetailImage(c);
-  go("details");
+  $("detailProfit").textContent=`${p>=0?"+":""}${money(p)}`;$("detailProfit").style.color=p<0?"var(--danger)":"var(--good)";
+  $("detailConfidence").textContent=c.aiConfidence?`${Math.round(c.aiConfidence)}%`:"—";$("detailRookie").classList.toggle("hidden",!c.rookie);
+  $("favoriteCardBtn").textContent=c.favorite?"★":"☆";$("favoriteCardBtn").classList.toggle("active",c.favorite);
+
+  $("dPlayer").value=c.player||"";$("dTeam").value=c.team||"";$("dYear").value=c.year||"";$("dSet").value=c.set||"";
+  $("dNumber").value=c.number||"";$("dParallel").value=c.parallel||"";$("dSerial").value=c.serial||"";
+  $("dGrade").value=c.grade||"";$("dPaid").value=c.paid||"";$("dValue").value=c.value||"";$("dCollection").value=c.collection||"";$("dTags").value=(c.tags||[]).join(", ");$("dNotes").value=c.notes||"";
+
+  $("detailMarketValue").textContent=money(c.value);
+  $("detailPriceMeta").textContent=c.priceUpdatedAt
+    ? `${c.priceSource||"AI estimate"} • ${priceAgeText(c.priceUpdatedAt)} • ${c.priceConfidence||"Unknown"} confidence`
+    : (c.priceSource||"Scan estimate • included with identification");
+  const srcWrap=$("detailPriceSources");srcWrap.innerHTML="";
+  (c.priceSources||[]).slice(0,5).forEach((src,i)=>{
+    const a=document.createElement("a");a.href=src.url;a.target="_blank";a.rel="noopener noreferrer";a.textContent=src.title||`Source ${i+1}`;srcWrap.appendChild(a)
+  });
+  renderDetailPriceHistory(c);
+  renderDetailImage(c);go("details");
 }
 function renderDetailImage(c){
   $("detailImage").src=detailSide==="back"?(c.back||c.front):(c.front||c.back);
   $("showFrontBtn").classList.toggle("active",detailSide==="front");
   $("showBackBtn").classList.toggle("active",detailSide==="back");
+}
+
+function renderDetailPriceHistory(c){
+  const svg=$("detailPriceChart"),text=$("detailPriceHistoryText");if(!svg||!text)return;
+  const hist=Array.isArray(c.priceHistory)?c.priceHistory.slice(-20):[];
+  if(!hist.length){
+    svg.innerHTML="";text.textContent="No price history yet. Future value updates will appear here.";return;
+  }
+  const vals=hist.map(x=>Number(x.value||0));const max=Math.max(...vals,1),min=Math.min(...vals,0),range=Math.max(1,max-min);
+  const pts=vals.map((v,i)=>[(vals.length===1?160:(i/(vals.length-1))*314+3),94-((v-min)/range)*80]);
+  const line=pts.map(p=>p.join(",")).join(" ");
+  svg.innerHTML=`<line class="chart-grid-line" x1="0" x2="320" y1="25" y2="25"/><line class="chart-grid-line" x1="0" x2="320" y1="65" y2="65"/><polyline class="chart-line" points="${line}"/><circle class="chart-dot" cx="${pts.at(-1)[0]}" cy="${pts.at(-1)[1]}" r="4"/>`;
+  const delta=vals.at(-1)-vals[0];
+  text.textContent=`${hist.length} value update${hist.length===1?"":"s"} • ${delta>=0?"+":""}${money(delta)} since first tracked price`;
 }
 $("showFrontBtn").addEventListener("click",()=>{detailSide="front";const c=cards.find(x=>x.id===currentDetailId);if(c)renderDetailImage(c)});
 $("showBackBtn").addEventListener("click",()=>{detailSide="back";const c=cards.find(x=>x.id===currentDetailId);if(c)renderDetailImage(c)});
@@ -345,11 +774,14 @@ async function prepareCardForCloud(card){
 
 async function persistCard(card){
   card=normalizeCard(card);
+
   if(currentUser && firebase?.db){
-    // Keep photos on this device. Firestore stores only portable card metadata.
-    // This avoids document-size/indexing problems entirely on the free tier.
+    // Preserve original photos on this device.
     saveLocalCardImages(card);
-    const cloudCard={...card,front:"",back:""};
+
+    // Sync compact front/back thumbnails so the card has images on every device.
+    const cloudCard=await prepareCloudCard(card);
+
     await firebase.setDoc(
       firebase.doc(firebase.db,"users",currentUser.uid,"cards",card.id),
       cloudCard,
@@ -358,7 +790,9 @@ async function persistCard(card){
   }else{
     const index=cards.findIndex(c=>c.id===card.id);
     if(index>=0)cards[index]=card;else cards.unshift(card);
-    cards=dedupeCards(cards);saveLocalCards();renderAll();
+    cards=dedupeCards(cards);
+    saveLocalCards();
+    renderAll();
   }
 }
 async function removeCard(id){
@@ -372,11 +806,36 @@ $("saveDetailBtn").addEventListener("click",async()=>{
   const c=cards.find(x=>x.id===currentDetailId);if(!c)return;
   const btn=$("saveDetailBtn");btn.disabled=true;
   try{
-    await persistCard({...c,grade:$("dGrade").value.trim(),paid:Number($("dPaid").value||0),value:Number($("dValue").value||0)});
-    toast("Card updated");
-    openDetails(c.id);
+    const newValue=Number($("dValue").value||0);
+    const updated={
+      ...c,player:$("dPlayer").value.trim()||"Unknown card",team:$("dTeam").value.trim(),year:$("dYear").value.trim(),
+      set:$("dSet").value.trim(),number:$("dNumber").value.trim(),parallel:$("dParallel").value.trim(),serial:$("dSerial").value.trim(),
+      grade:$("dGrade").value.trim(),paid:Number($("dPaid").value||0),value:newValue,collection:$("dCollection").value.trim(),tags:$("dTags").value.split(",").map(x=>x.trim()).filter(Boolean),notes:$("dNotes").value.trim()
+    };
+    if(Math.abs(newValue-Number(c.value||0))>.001)updated.priceHistory=pushPriceHistory(c,newValue,"Manual edit");
+    await persistCard(updated);toast("Card updated");openDetails(c.id);
   }catch{toast("Could not save changes");}
   finally{btn.disabled=false}
+});
+$("favoriteCardBtn").addEventListener("click",async()=>{
+  const c=cards.find(x=>x.id===currentDetailId);if(!c)return;
+  try{await persistCard({...c,favorite:!c.favorite});openDetails(c.id);toast(c.favorite?"Removed from favorites":"Added to favorites")}catch{toast("Could not update favorite")}
+});
+$("detailRefreshPriceBtn").addEventListener("click",async()=>{
+  const c=cards.find(x=>x.id===currentDetailId);if(!c)return;
+  const btn=$("detailRefreshPriceBtn");btn.disabled=true;btn.textContent="Refreshing…";
+  try{
+    const payload={player:c.player,team:c.team,sport:c.sport,year:c.year,set:c.set,cardNumber:c.number,parallel:c.parallel,serialNumber:c.serial,grade:c.grade};
+    const res=await fetch("/api/price",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const d=await res.json().catch(()=>({}));
+    if(res.status===429){toast("Live pricing is cooling down. Try again later.");return}
+    if(!res.ok)throw new Error(d.error||"Pricing failed");
+    const next={...c,value:Number(d.value||c.value),priceLow:Number(d.low||0),priceHigh:Number(d.high||0),priceConfidence:d.confidence||"Low",
+      priceSource:d.source||"Live AI market estimate",priceNote:d.note||"",priceSources:d.sources||[],priceUpdatedAt:Date.now()};
+    next.priceHistory=pushPriceHistory(c,next.value,next.priceSource);
+    await persistCard(next);openDetails(c.id);toast("Value refreshed");
+  }catch(e){console.error(e);toast("Live refresh unavailable")}
+  finally{btn.disabled=false;btn.textContent="Live refresh"}
 });
 $("deleteCardBtn").addEventListener("click",async()=>{
   const c=cards.find(x=>x.id===currentDetailId);if(!c)return;
@@ -384,6 +843,45 @@ $("deleteCardBtn").addEventListener("click",async()=>{
   try{await removeCard(c.id);currentDetailId=null;toast("Card deleted");go("vault")}catch{toast("Could not delete card")}
 });
 
+
+async function analyzePhotoQuality(dataUrl){
+  try{
+    const img=await loadImage(dataUrl);
+    const canvas=document.createElement("canvas");
+    const max=220,scale=Math.min(1,max/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
+    canvas.width=Math.max(1,Math.round((img.naturalWidth||img.width)*scale));
+    canvas.height=Math.max(1,Math.round((img.naturalHeight||img.height)*scale));
+    const ctx=canvas.getContext("2d",{willReadFrequently:true});ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    let sum=0,sum2=0,n=0;
+    for(let i=0;i<data.length;i+=16){
+      const y=.2126*data[i]+.7152*data[i+1]+.0722*data[i+2];
+      sum+=y;sum2+=y*y;n++;
+    }
+    const mean=sum/n,variance=Math.max(0,sum2/n-mean*mean),contrast=Math.sqrt(variance);
+    const aspect=(img.naturalWidth||img.width)/(img.naturalHeight||img.height);
+    const portrait=aspect<1;
+    let status="Good",cls="quality-good",advice="";
+    if(mean<45){status="Too dark";cls="quality-bad";advice="Use brighter, even lighting."}
+    else if(mean>225){status="Too bright";cls="quality-warn";advice="Reduce glare or direct light."}
+    else if(contrast<28){status="Low detail";cls="quality-warn";advice="Hold the camera steady and focus on the card."}
+    else if(!portrait){status="Check framing";cls="quality-warn";advice="A straight portrait photo usually scans best."}
+    return {status,cls,advice};
+  }catch{return {status:"Usable",cls:"quality-warn",advice:"Make sure the full card is visible."}}
+}
+async function updateQualityPanel(){
+  if(!frontData&&!backData)return;
+  $("photoQuality").classList.remove("hidden");
+  const results=[];
+  if(frontData){
+    const q=await analyzePhotoQuality(frontData);$("frontQuality").textContent=q.status;$("frontQuality").className=q.cls;results.push(q);
+  }
+  if(backData){
+    const q=await analyzePhotoQuality(backData);$("backQuality").textContent=q.status;$("backQuality").className=q.cls;results.push(q);
+  }
+  const issue=results.find(x=>x.advice);
+  $("qualityAdvice").textContent=issue?.advice||"Photos look good. You’re ready to identify the card.";
+}
 function readFileAsDataURL(file){
   return new Promise((resolve,reject)=>{
     const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error("Could not read this photo."));r.readAsDataURL(file);
@@ -399,13 +897,13 @@ async function shrinkImage(file){
   const original=await readFileAsDataURL(file);
   try{
     const img=await loadImage(original);
-    const max=1500, scale=Math.min(1,max/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
+    const max=900, scale=Math.min(1,max/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
     const w=Math.max(1,Math.round((img.naturalWidth||img.width)*scale));
     const h=Math.max(1,Math.round((img.naturalHeight||img.height)*scale));
     const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
     const ctx=canvas.getContext("2d",{alpha:false});if(!ctx)return original;
     ctx.drawImage(img,0,0,w,h);
-    return canvas.toDataURL("image/jpeg",.83);
+    return canvas.toDataURL("image/jpeg",.72);
   }catch{return original}
 }
 function updateScanReady(){
@@ -429,7 +927,7 @@ async function loadSide(side,file){
     }else{
       backData=data;$("backImage").src=data;$("backCapture").classList.add("ready");$("backCapture").querySelector(".retake").classList.remove("hidden");
     }
-    activeScanId=null;selectedMatch=null;aiResult=null;updateScanReady();
+    activeScanId=null;selectedMatch=null;aiResult=null;updateScanReady();updateQualityPanel();
   }catch(err){
     $("analysisState").classList.remove("hidden");$("analysisSpinner").classList.remove("ready");
     $("analysisTitle").textContent="Photo couldn't load";$("analysisSub").textContent=err.message;toast(err.message);
@@ -439,13 +937,24 @@ $("frontFile").addEventListener("change",e=>loadSide("front",e.target.files?.[0]
 $("backFile").addEventListener("change",e=>loadSide("back",e.target.files?.[0]));
 document.querySelectorAll(".retake").forEach(b=>b.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();$(b.dataset.replace==="front"?"frontFile":"backFile").click()}));
 
+
+function setScanMode(mode){
+  scanMode=mode;
+  document.querySelectorAll("[data-scan-mode]").forEach(b=>b.classList.toggle("active",b.dataset.scanMode===mode));
+  $("batchStatus").classList.toggle("hidden",mode!=="batch");
+  $("batchCount").textContent=`${batchSessionCount} card${batchSessionCount===1?"":"s"}`;
+}
+document.querySelectorAll("[data-scan-mode]").forEach(b=>b.addEventListener("click",()=>setScanMode(b.dataset.scanMode)));
+$("finishBatchBtn")?.addEventListener("click",()=>{
+  scanMode="single";batchSessionCount=0;setScanMode("single");go("vault");toast("Batch session finished");
+});
 function resetScan(){
   analyzeController?.abort();
   frontData="";backData="";selectedMatch=null;aiResult=null;activeScanId=null;savingCard=false;
   ["front","back"].forEach(side=>{
     $(side+"File").value="";$(side+"Image").src="";$(side+"Capture").classList.remove("ready");$(side+"Capture").querySelector(".retake").classList.add("hidden");
   });
-  $("analysisState").classList.add("hidden");$("analysisSpinner").classList.remove("ready");
+  $("analysisState").classList.add("hidden");$("analysisSpinner").classList.remove("ready");$("photoQuality").classList.add("hidden");
   $("analyzeBtn").disabled=true;$("analyzeLabel").textContent="Identify card";
   $("addVaultBtn").disabled=false;$("saveCardLabel").textContent="Add to Vault";
 }
@@ -458,20 +967,34 @@ $("analyzeBtn").addEventListener("click",async()=>{
   const timer=setTimeout(()=>analyzeController?.abort(),50000);
   $("analyzeBtn").disabled=true;$("analyzeLabel").textContent="Analyzing…";
   $("analysisState").classList.remove("hidden");$("analysisSpinner").classList.remove("ready");
-  $("analysisTitle").textContent="Analyzing both sides…";$("analysisSub").textContent="Reading names, card number, set details, parallels and serial clues.";
+  $("analysisTitle").textContent="Analyzing both sides…";$("analysisSub").textContent="Identifying the card and estimating value in one AI request.";
+
   try{
-    const res=await fetch("/api/identify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({front:frontData,back:backData}),signal:analyzeController.signal});
-    const data=await res.json();
-    if(!res.ok)throw new Error(data.error||"Could not identify this card.");
-    aiResult=data;scans+=1;localStorage.setItem(SCAN_KEY,String(scans));renderAll();renderMatches(data);go("matches");
+    const key=await stableImageKey();
+    let data=readIdentifyCache(key);
+    if(data){
+      $("analysisSub").textContent="Loaded a recent result without spending another AI request.";
+    }else{
+      const res=await fetch("/api/identify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({front:frontData,back:backData}),signal:analyzeController.signal});
+      data=await res.json();
+      if(!res.ok){
+        const err=new Error(data.error||"Could not identify this card.");
+        err.status=res.status;
+        throw err;
+      }
+      writeIdentifyCache(key,data);
+      scans+=1;localStorage.setItem(SCAN_KEY,String(scans));
+    }
+    aiResult=data;renderAll();renderMatches(data);go("matches");
   }catch(err){
     const message=err.name==="AbortError"?"The scan took too long. Try again.":err.message;
-    $("analysisTitle").textContent="Scan couldn't finish";$("analysisSub").textContent=message;toast(message);
+    $("analysisTitle").textContent=err.status===429?"AI quota is cooling down":"Scan couldn't finish";
+    $("analysisSub").textContent=message;
+    toast(message);
   }finally{
     clearTimeout(timer);analyzeController=null;$("analyzeBtn").disabled=!(frontData&&backData);$("analyzeLabel").textContent="Identify card";
   }
 });
-
 function descriptor(m){return [m.year,m.manufacturer,m.set,m.cardNumber?`#${m.cardNumber}`:"",m.parallel].filter(Boolean).join(" • ")}
 function matchCard(m,primary=false){
   const el=document.createElement("article");el.className="match-card";
@@ -501,14 +1024,21 @@ function renderMatches(data){
 }
 function selectMatch(m){
   selectedMatch=m;
-  $("confirmFront").src=frontData;
-  $("confirmConfidence").textContent=`${Math.round(m.confidence||0)}% AI match`;
-  $("confirmName").textContent=m.player||"Unknown card";
-  $("confirmDescriptor").textContent=descriptor(m);
+  $("confirmFront").src=frontData;$("confirmConfidence").textContent=`${Math.round(m.confidence||0)}% AI match`;
+  $("confirmName").textContent=m.player||"Unknown card";$("confirmDescriptor").textContent=descriptor(m);
   $("fPlayer").value=m.player||"";$("fTeam").value=m.team||"";$("fSport").value=m.sport||"Other";$("fYear").value=m.year||"";
   $("fSet").value=[m.manufacturer,m.set].filter(Boolean).join(" ");$("fNumber").value=m.cardNumber||"";$("fParallel").value=m.parallel||"";
-  $("fSerial").value=m.serialNumber||"";$("fGrade").value=m.grade||"Raw";$("fPaid").value="";$("fValue").value="";$("fRookie").checked=Boolean(m.rookie);
-  go("confirm");
+  $("fSerial").value=m.serialNumber||"";$("fGrade").value=m.grade||"Raw";$("fPaid").value="";$("fRookie").checked=Boolean(m.rookie);
+
+  const estimate=aiResult?.marketEstimate||{};
+  if(Number.isFinite(Number(estimate.value)) && Number(estimate.value)>=0){
+    $("fValue").value=Number(estimate.value).toFixed(2);
+    pricingState={status:"ready",value:Number(estimate.value),low:Number(estimate.low||estimate.value),high:Number(estimate.high||estimate.value),
+      confidence:estimate.confidence||"Low",comps:0,source:"Scan AI estimate",sources:[],note:estimate.note||"Approximate value included with identification.",updatedAt:0};
+  }else{
+    $("fValue").value="";pricingState={status:"idle",value:null,low:null,high:null,confidence:null,comps:0,source:"pending"};
+  }
+  renderPricing();go("confirm");
 }
 
 $("addVaultBtn").addEventListener("click",async()=>{
@@ -520,12 +1050,25 @@ $("addVaultBtn").addEventListener("click",async()=>{
     player:$("fPlayer").value.trim()||"Unknown card",team:$("fTeam").value.trim(),sport:$("fSport").value,
     year:$("fYear").value.trim(),set:$("fSet").value.trim(),number:$("fNumber").value.trim(),parallel:$("fParallel").value.trim(),
     serial:$("fSerial").value.trim(),grade:$("fGrade").value.trim()||"Raw",paid:Number($("fPaid").value||0),value:Number($("fValue").value||0),
-    rookie:$("fRookie").checked,aiConfidence:Number(selectedMatch.confidence||0),createdAt:Date.now()
+    rookie:$("fRookie").checked,aiConfidence:Number(selectedMatch.confidence||0),
+    priceSource:pricingState.source||"Scan AI estimate",priceConfidence:pricingState.confidence||"",
+    priceLow:Number(pricingState.low||0),priceHigh:Number(pricingState.high||0),priceNote:pricingState.note||"",
+    priceUpdatedAt:pricingState.updatedAt||Date.now(),priceSources:pricingState.sources||[],
+    priceHistory:pushPriceHistory({priceHistory:[]},Number($("fValue").value||0),pricingState.source||"Scan AI estimate"),
+    createdAt:Date.now()
   });
   try{
     await persistCard(card);
     toast("Added to your Vault");
-    resetScan();go("home");
+    if(scanMode==="batch"){
+      batchSessionCount+=1;
+      resetScan();
+      setScanMode("batch");
+      go("scan");
+      toast(`Saved • ${batchSessionCount} card${batchSessionCount===1?"":"s"} in this batch`);
+    }else{
+      resetScan();go("home");
+    }
   }catch(err){
     console.error("Card save failed:",err);
     const code=String(err?.code||"unknown");
@@ -537,7 +1080,7 @@ $("addVaultBtn").addEventListener("click",async()=>{
     $("analysisSub").textContent=message;
 
     toast(`Save failed: ${code}`);
-    setTimeout(()=>alert(`CARD VAULT v1.0.7 SAVE ERROR
+    setTimeout(()=>alert(`CARD VAULT v1.4.0 SAVE ERROR
 
 Code: ${code}
 
@@ -663,6 +1206,9 @@ async function providerSignIn(provider, providerName="google"){
     setLoginBusy(false,providerName);
   }
 }
+$("updateValueBtn")?.addEventListener("click",()=>updateMarketValue(true));
+renderPricing();
+
 $("googleSignIn").addEventListener("click",()=>{
   if(!firebase)return;
   providerSignIn(new firebase.GoogleAuthProvider(),"google");

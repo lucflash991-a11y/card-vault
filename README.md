@@ -1,4 +1,4 @@
-# Card Vault v1.7.0 — Mega Update
+# Card Vault v1.7.1 — AI Endurance Update
 
 Major rebuild of the Card Vault PWA.
 
@@ -250,3 +250,14 @@ Combines the planned v1.5, v1.6, and v1.7 releases.
 - Full card detail editing retained
 
 This build keeps Google accounts, Firestore sync, cross-device thumbnails, dark mode, AI efficiency, pricing cache, live price refresh, card details, and all fixes from v1.4.1.
+
+
+## v1.7.1 AI Endurance Update
+- Normal scans now prefer stable `gemini-3.1-flash-lite`, a multimodal model optimized for high-frequency lightweight workloads.
+- Automatic model routing falls back to stable `gemini-2.5-flash` on 404/429/503 instead of immediately failing.
+- Scan photos are resized to 900px max and JPEG quality 0.72 before upload, reducing image payload and token pressure.
+- Output is capped to 1,800 tokens and temperature lowered.
+- Identification still includes the rough value estimate in the SAME request.
+- Improved image-result caching uses a tiny perceptual-style fingerprint so repeat scans can be reused more efficiently.
+- Live web pricing remains manual and separate; it does not run during normal scanning.
+- Clearer 429/cooldown messaging.

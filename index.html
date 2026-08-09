@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f5f7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Card Vault">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/styles.css">
+  <title>Card Vault</title>
+</head>
+<body>
+  <div id="authGate" class="auth-gate">
+    <div class="auth-shell">
+      <div class="auth-brand">
+        <div class="auth-logo">CV</div>
+        <p class="eyebrow">CARD VAULT</p>
+        <h1>Your collection,<br>finally organized.</h1>
+        <p class="auth-sub">Scan cards with AI, track your vault, and keep everything in one place.</p>
+      </div>
+
+      <div class="auth-actions">
+        <button id="googleSignIn" class="social-button google-button" type="button">
+          <span class="social-mark google-mark">G</span>
+          <span>Continue with Google</span>
+        </button>
+
+        <button id="appleSignIn" class="social-button apple-button" type="button">
+          <span class="social-mark apple-mark">●</span>
+          <span>Continue with Apple</span>
+        </button>
+
+        <button id="guestSignIn" class="guest-button" type="button">Continue as guest</button>
+        <p id="authHint" class="auth-hint">Guest mode keeps your collection on this device.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="appShell" class="app-shell hidden">
+    <main>
+      <section id="home" class="screen active">
+        <header class="home-header">
+          <button class="wordmark" data-go="home" type="button">
+            <span class="wordmark-icon">CV</span>
+            <span>
+              <small>CARD VAULT</small>
+              <b id="homeGreeting">My Collection</b>
+            </span>
+          </button>
+          <button class="profile-chip" data-go="profile" type="button" aria-label="Open profile">
+            <span id="profileInitial">C</span>
+          </button>
+        </header>
+
+        <section class="portfolio-card">
+          <div class="portfolio-top">
+            <div>
+              <span class="portfolio-label">COLLECTION VALUE</span>
+              <strong id="homeValue">$0</strong>
+            </div>
+            <div id="homeProfit" class="profit-badge">+$0</div>
+          </div>
+          <div class="portfolio-stats">
+            <div><strong id="homeCards">0</strong><span>Cards</span></div>
+            <div><strong id="homeScans">0</strong><span>AI scans</span></div>
+            <div><strong id="homeRookies">0</strong><span>Rookies</span></div>
+          </div>
+        </section>
+
+        <section class="analytics-strip">
+          <div><span>Invested</span><strong id="dashPaid">$0</strong></div>
+          <div><span>Profit</span><strong id="dashProfit">$0</strong></div>
+          <div><span>Avg card</span><strong id="dashAverage">$0</strong></div>
+        </section>
+
+        <section class="vault-history-card">
+          <div class="vault-history-top">
+            <div>
+              <small>VAULT VALUE HISTORY</small>
+              <strong id="historyCurrentValue">$0</strong>
+              <div id="historyChangePill" class="history-change neutral">No history yet</div>
+            </div>
+            <button id="historyRangeBtn" class="history-range" type="button">30D</button>
+          </div>
+
+          <div class="history-chart-wrap">
+            <svg id="valueChart" class="value-chart premium-chart" viewBox="0 0 320 130" preserveAspectRatio="none" aria-label="Vault value history"></svg>
+          </div>
+
+          <div class="history-axis">
+            <span id="historyStartLabel">Start</span>
+            <span id="historyEndLabel">Today</span>
+          </div>
+
+          <div class="history-summary">
+            <div><span>Start value</span><b id="chartStart">$0</b></div>
+            <div><span>Current value</span><b id="chartEnd">$0</b></div>
+            <div><span>Change</span><b id="chartChange">$0</b></div>
+          </div>
+        </section>
+
+        <section class="dashboard-panel">
+          <div class="dashboard-head">
+            <div><small>BREAKDOWN</small><h2>By sport</h2></div>
+          </div>
+          <div id="sportBreakdown" class="sport-breakdown"><p class="muted-copy">Add cards to see your collection mix.</p></div>
+        </section>
+        <section class="dashboard-panel">
+          <div class="dashboard-head">
+            <div><small>PERFORMANCE</small><h2>Top movers</h2></div>
+          </div>
+          <div class="mover-grid">
+            <div class="mover-column">
+              <span class="mover-label">BIGGEST GAINER</span>
+              <button id="topGainer" class="mover-card empty-mover" type="button">No price history yet</button>
+            </div>
+            <div class="mover-column">
+              <span class="mover-label">BIGGEST LOSER</span>
+              <button id="topLoser" class="mover-card empty-mover" type="button">No price history yet</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="dashboard-panel">
+          <div class="dashboard-head">
+            <div><small>VALUE BREAKDOWN</small><h2>Top players & sets</h2></div>
+          </div>
+          <div class="ranking-grid">
+            <div>
+              <span class="ranking-title">Players</span>
+              <div id="topPlayers" class="ranking-list"></div>
+            </div>
+            <div>
+              <span class="ranking-title">Sets</span>
+              <div id="topSets" class="ranking-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <button class="scan-cta" data-go="scan" type="button">
+          <span class="scan-spark">✦</span>
+          <span class="scan-cta-copy">
+            <small>CARD VAULT AI</small>
+            <b>Scan a card</b>
+            <span>Front + back → identify → confirm</span>
+          </span>
+          <span class="chevron">›</span>
+        </button>
+
+        <section id="featuredWrap" class="featured-wrap hidden">
+          <div class="section-heading">
+            <div><small>HIGHLIGHT</small><h2>Top card</h2></div>
+          </div>
+          <button id="featuredCard" class="featured-card" type="button"></button>
+        </section>
+
+        <div class="section-heading">
+          <div><small>YOUR VAULT</small><h2>Recently added</h2></div>
+          <button data-go="vault" type="button">View all</button>
+        </div>
+        <div id="recentList" class="card-grid empty-state">
+          <p>Your first card will show up here.</p>
+        </div>
+      </section>
+
+      <section id="vault" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="home" type="button">‹</button>
+          <div><small>COLLECTION</small><h1>My Vault</h1></div>
+          <div class="header-spacer"></div>
+        </header>
+
+        <div class="vault-controls">
+          <label class="search-box">
+            <span>⌕</span>
+            <input id="searchBox" type="search" placeholder="Search player, set, team, tag">
+          </label>
+          <select id="sortFilter" class="select-control" aria-label="Sort cards">
+            <option value="newest">Newest</option>
+            <option value="value">Highest value</option>
+            <option value="profit">Highest profit</option>
+            <option value="player">Player A–Z</option>
+          </select>
+        </div>
+
+        <div class="advanced-filters">
+          <select id="gradeFilter" class="select-control">
+            <option value="">Raw + graded</option>
+            <option value="raw">Raw only</option>
+            <option value="graded">Graded only</option>
+          </select>
+          <select id="favoriteFilter" class="select-control">
+            <option value="">All cards</option>
+            <option value="favorite">Favorites</option>
+          </select>
+          <select id="collectionFilter" class="select-control">
+            <option value="">All collections</option>
+          </select>
+        </div>
+
+        <div id="sportChips" class="chip-row">
+          <button type="button" class="filter-chip active" data-sport="">All</button>
+          <button type="button" class="filter-chip" data-sport="Football">Football</button>
+          <button type="button" class="filter-chip" data-sport="Basketball">Basketball</button>
+          <button type="button" class="filter-chip" data-sport="Baseball">Baseball</button>
+          <button type="button" class="filter-chip" data-sport="Hockey">Hockey</button>
+          <button type="button" class="filter-chip" data-sport="Soccer">Soccer</button>
+        </div>
+
+        <div id="vaultList" class="card-grid empty-state">
+          <p>No cards in your vault yet.</p>
+        </div>
+      </section>
+
+      <section id="scan" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="home" type="button">‹</button>
+          <div><small>CARD VAULT AI</small><h1>Scan card</h1></div>
+          <button id="resetScanBtn" class="header-action" type="button">Reset</button>
+        </header>
+
+        <div class="scan-copy">
+          <h2>Scanner 2.0</h2>
+          <p>Card Vault checks framing, glare, sharpness, card identity, parallel details, serial numbers, and visible grading slabs.</p>
+        </div>
+
+        <div class="scan-mode-picker">
+          <button class="scan-mode active" data-scan-mode="single" type="button">Single card</button>
+          <button class="scan-mode" data-scan-mode="batch" type="button">Batch mode</button>
+        </div>
+
+        <div id="batchStatus" class="batch-status hidden">
+          <div><small>BATCH SESSION</small><strong id="batchCount">0 cards</strong></div>
+          <button id="finishBatchBtn" type="button">Finish batch</button>
+        </div>
+
+        <div class="photo-stack">
+          <label class="photo-panel" id="frontCapture">
+            <input id="frontFile" type="file" accept="image/*" capture="environment">
+            <img id="frontImage" alt="Front of card">
+            <div class="photo-empty">
+              <span class="photo-step">01</span>
+              <div><b>Front of card</b><small>Tap to take or choose photo</small></div>
+              <span class="photo-plus">＋</span>
+            </div>
+            <button class="retake hidden" data-replace="front" type="button">Replace</button>
+          </label>
+
+          <label class="photo-panel" id="backCapture">
+            <input id="backFile" type="file" accept="image/*" capture="environment">
+            <img id="backImage" alt="Back of card">
+            <div class="photo-empty">
+              <span class="photo-step">02</span>
+              <div><b>Back of card</b><small>Tap to take or choose photo</small></div>
+              <span class="photo-plus">＋</span>
+            </div>
+            <button class="retake hidden" data-replace="back" type="button">Replace</button>
+          </label>
+        </div>
+
+        <div class="ai-tags">
+          <span>AI checks</span>
+          <b>Player</b><b>Year</b><b>Set</b><b>Card #</b><b>Parallel</b><b>Serial</b><b>Slab</b><b>Grade</b>
+        </div>
+
+        <div id="photoQuality" class="photo-quality hidden">
+          <div><span>Front</span><b id="frontQuality">Checking…</b></div>
+          <div><span>Back</span><b id="backQuality">Checking…</b></div>
+          <p id="qualityAdvice">Card Vault will warn you if either image looks too dark, blurry, or poorly framed.</p>
+        </div>
+
+        <button id="analyzeBtn" class="primary-button" disabled type="button">
+          <span id="analyzeLabel">Identify card</span><span>✦</span>
+        </button>
+
+        <div id="analysisState" class="status-panel hidden" aria-live="polite">
+          <div id="analysisSpinner" class="spinner"></div>
+          <div><b id="analysisTitle">Both photos are ready</b><small id="analysisSub">Tap Identify card to run Card Vault AI.</small></div>
+        </div>
+      </section>
+
+      <section id="matches" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="scan" type="button">‹</button>
+          <div><small>AI RESULTS</small><h1>Matches</h1></div>
+          <div class="header-spacer"></div>
+        </header>
+
+        <p id="matchSummary" class="page-note">Compare the results and choose the exact card.</p>
+        <div id="scanWarning" class="warning-panel hidden"></div>
+        <div id="primaryMatch"></div>
+
+        <div id="alternateWrap" class="hidden">
+          <div class="section-heading compact-heading">
+            <div><small>ALTERNATES</small><h2>Other possibilities</h2></div>
+            <span id="alternateCount" class="small-count"></span>
+          </div>
+          <div id="alternateMatches" class="alternate-list"></div>
+        </div>
+
+        <button class="secondary-button" data-go="scan" type="button">None of these — scan again</button>
+      </section>
+
+      <section id="confirm" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="matches" type="button">‹</button>
+          <div><small>CONFIRM</small><h1>Add to Vault</h1></div>
+          <div class="header-spacer"></div>
+        </header>
+
+        <section class="confirm-card">
+          <img id="confirmFront" alt="Selected card">
+          <div>
+            <span id="confirmConfidence" class="confidence-badge">—</span>
+            <h2 id="confirmName">Card</h2>
+            <p id="confirmDescriptor"></p>
+          </div>
+        </section>
+
+        <div class="form-sheet">
+          <div class="form-line"><label for="fPlayer">Player</label><input id="fPlayer"></div>
+          <div class="form-line"><label for="fTeam">Team</label><input id="fTeam"></div>
+          <div class="form-line"><label for="fSport">Sport</label><select id="fSport"><option>Football</option><option>Basketball</option><option>Baseball</option><option>Hockey</option><option>Soccer</option><option>Other</option></select></div>
+          <div class="form-line"><label for="fYear">Year</label><input id="fYear"></div>
+          <div class="form-line"><label for="fSet">Set</label><input id="fSet"></div>
+          <div class="form-line"><label for="fNumber">Card #</label><input id="fNumber"></div>
+          <div class="form-line"><label for="fParallel">Parallel</label><input id="fParallel"></div>
+          <div class="form-line"><label for="fSerial">Serial #</label><input id="fSerial" placeholder="—"></div>
+          <div class="form-line"><label for="fGrade">Grade</label><input id="fGrade" placeholder="Raw"></div>
+          <div class="form-line money-line"><label for="fPaid">Paid</label><input id="fPaid" inputmode="decimal" placeholder="$0"></div>
+          <div class="form-line money-line"><label for="fValue">Est. value</label><input id="fValue" inputmode="decimal" placeholder="$0"></div><div class="price-intel"><div class="price-intel-head"><div><span class="price-kicker">AI VALUE</span><strong id="marketValue">Not priced yet</strong></div><button id="updateValueBtn" class="price-update" type="button">Update Value</button></div><div id="priceMeta" class="price-meta">Included with this scan • no extra AI call</div><div id="priceRange" class="price-meta hidden"></div><div id="priceConfidence" class="price-meta hidden"></div><div id="priceSources" class="price-sources hidden"></div></div>
+          <label class="toggle-line">
+            <input id="fRookie" type="checkbox">
+            <span class="toggle-control"></span>
+            <span><b>Rookie card</b><small>Mark this card as an RC</small></span>
+          </label>
+        </div>
+
+        <button id="addVaultBtn" class="primary-button" type="button">
+          <span id="saveCardLabel">Add to Vault</span><span>＋</span>
+        </button>
+      </section>
+
+      <section id="details" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="vault" type="button">‹</button>
+          <div><small>CARD DETAILS</small><h1 id="detailHeader">Card</h1></div>
+          <div class="detail-actions">
+            <button id="favoriteCardBtn" class="favorite-action" type="button" aria-label="Favorite card">☆</button>
+            <button id="deleteCardBtn" class="danger-action" type="button">Delete</button>
+          </div>
+        </header>
+
+        <div class="detail-gallery">
+          <div class="detail-image-wrap"><img id="detailImage" alt="Card image"></div>
+          <div class="image-tabs">
+            <button id="showFrontBtn" class="active" type="button">Front</button>
+            <button id="showBackBtn" type="button">Back</button>
+          </div>
+        </div>
+
+        <div class="detail-title">
+          <div>
+            <span id="detailRookie" class="mini-badge hidden">ROOKIE</span>
+            <h2 id="detailPlayer">Card</h2>
+            <p id="detailDescription"></p>
+          </div>
+          <strong id="detailValue">$0</strong>
+        </div>
+
+        <div class="detail-metrics">
+          <div><span>Paid</span><b id="detailPaid">$0</b></div>
+          <div><span>Profit</span><b id="detailProfit">$0</b></div>
+          <div><span>AI match</span><b id="detailConfidence">—</b></div>
+        </div>
+
+        <div class="detail-section-title"><small>CARD INFO</small><h2>Details</h2></div>
+        <div class="form-sheet">
+          <div class="form-line"><label for="dPlayer">Player</label><input id="dPlayer"></div>
+          <div class="form-line"><label for="dTeam">Team</label><input id="dTeam"></div>
+          <div class="form-line"><label for="dYear">Year</label><input id="dYear"></div>
+          <div class="form-line"><label for="dSet">Set</label><input id="dSet"></div>
+          <div class="form-line"><label for="dNumber">Card #</label><input id="dNumber"></div>
+          <div class="form-line"><label for="dParallel">Parallel</label><input id="dParallel"></div>
+          <div class="form-line"><label for="dSerial">Serial #</label><input id="dSerial"></div>
+          <div class="form-line"><label for="dGrade">Grade</label><input id="dGrade"></div>
+          <div class="form-line money-line"><label for="dPaid">Paid</label><input id="dPaid" inputmode="decimal"></div>
+          <div class="form-line money-line"><label for="dValue">Est. value</label><input id="dValue" inputmode="decimal"></div>
+        </div>
+
+        <div class="detail-section-title"><small>MARKET</small><h2>Value intelligence</h2></div>
+        <section class="detail-market-card">
+          <div class="detail-market-top">
+            <div><span>Current estimate</span><strong id="detailMarketValue">$0</strong></div>
+            <button id="detailRefreshPriceBtn" class="small-pill-button" type="button">Live refresh</button>
+          </div>
+          <div id="detailPriceMeta" class="detail-market-meta">No pricing data yet.</div>
+          <div id="detailPriceSources" class="detail-source-row"></div>
+        </section>
+
+        <div class="detail-section-title"><small>HISTORY</small><h2>Price history</h2></div>
+        <section class="detail-history-card">
+          <svg id="detailPriceChart" class="detail-price-chart" viewBox="0 0 320 100" preserveAspectRatio="none"></svg>
+          <p id="detailPriceHistoryText">No price history yet.</p>
+        </section>
+
+        <div class="detail-section-title"><small>ORGANIZATION</small><h2>Collections & tags</h2></div>
+        <div class="form-sheet">
+          <div class="form-line"><label for="dCollection">Collection</label><input id="dCollection" placeholder="Lions PC, Rookies, For Sale..."></div>
+          <div class="form-line"><label for="dTags">Tags</label><input id="dTags" placeholder="rookie, auto, numbered"></div>
+        </div>
+
+        <div class="detail-section-title"><small>PERSONAL</small><h2>Notes</h2></div>
+        <textarea id="dNotes" class="notes-field" rows="4" placeholder="Why you bought it, where you got it, anything you want to remember..."></textarea>
+
+        <button id="saveDetailBtn" class="primary-button" type="button"><span>Save changes</span><span>✓</span></button>
+      </section>
+
+      <section id="profile" class="screen">
+        <header class="page-header">
+          <button class="back-circle" data-go="home" type="button">‹</button>
+          <div><small>ACCOUNT</small><h1>Profile</h1></div>
+          <div class="header-spacer"></div>
+        </header>
+
+        <section class="profile-hero">
+          <div id="profileAvatar" class="profile-avatar">C</div>
+          <h2 id="profileName">Collector</h2>
+          <p id="profileEmail">Guest account</p>
+          <span id="accountModeBadge" class="account-badge">GUEST</span>
+        </section>
+
+        <div class="profile-stats">
+          <div><strong id="profileCards">0</strong><span>Cards</span></div>
+          <div><strong id="profileValue">$0</strong><span>Value</span></div>
+          <div><strong id="profileScans">0</strong><span>Scans</span></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title"><small>APPEARANCE</small><h2>Theme</h2></div>
+          <div class="theme-picker">
+            <button type="button" data-theme-choice="light">Light</button>
+            <button type="button" data-theme-choice="dark">Dark</button>
+            <button type="button" data-theme-choice="system">System</button>
+          </div>
+        </div>
+
+        <div class="settings-list">
+          <div><span>Collection storage</span><b id="storageMode">This device</b></div>
+          <div><span>AI scanner</span><b id="aiMode">Checking…</b></div>
+          <button id="accountActionBtn" type="button">Sign in</button>
+          <button id="clearDataBtn" class="danger-row" type="button">Clear local collection</button>
+        </div>
+
+        <p class="settings-footnote">When signed in, Card Vault can sync your vault through Firebase. Guest mode stays on this device.</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.7.1</p>
+      </section>
+    </main>
+
+    <nav id="tabbar" class="tabbar">
+      <button class="tab active" data-go="home" type="button"><span>⌂</span><small>Home</small></button>
+      <button class="tab" data-go="vault" type="button"><span>▦</span><small>Vault</small></button>
+      <button class="scan-tab" data-go="scan" type="button" aria-label="Scan a card"><span>✦</span></button>
+      <button class="tab" data-go="profile" type="button"><span>◉</span><small>Profile</small></button>
+    </nav>
+  </div>
+
+  <div id="toast" class="toast hidden" aria-live="polite"></div>
+
+  <script type="module" src="/app.js?v=171"></script>
+</body>
+</html>
