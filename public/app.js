@@ -94,15 +94,27 @@ const PRICE_CACHE_PREFIX="cardvault.price.v119.";
 const PRICE_CACHE_TTL=24*60*60*1000; // 24 hours
 
 
+async function tinyFingerprint(dataUrl){
+  try{
+    const img=await loadImage(dataUrl);
+    const canvas=document.createElement("canvas");canvas.width=16;canvas.height=16;
+    const ctx=canvas.getContext("2d",{willReadFrequently:true});ctx.drawImage(img,0,0,16,16);
+    const d=ctx.getImageData(0,0,16,16).data;
+    let out="";
+    for(let i=0;i<d.length;i+=16){
+      const y=Math.round((.2126*d[i]+.7152*d[i+1]+.0722*d[i+2])/16).toString(16);
+      out+=y;
+    }
+    return out;
+  }catch{return String(dataUrl?.length||0)}
+}
 async function stableImageKey(){
   try{
-    const input=`${frontData}|${backData}`;
+    const input=`${await tinyFingerprint(frontData)}|${await tinyFingerprint(backData)}`;
     const bytes=new TextEncoder().encode(input);
     const digest=await crypto.subtle.digest("SHA-256",bytes);
     return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
-  }catch{
-    return `${frontData.length}:${backData.length}:${frontData.slice(-80)}:${backData.slice(-80)}`;
-  }
+  }catch{return `${frontData.length}:${backData.length}`}
 }
 
 function readIdentifyCache(key){
@@ -885,13 +897,13 @@ async function shrinkImage(file){
   const original=await readFileAsDataURL(file);
   try{
     const img=await loadImage(original);
-    const max=1500, scale=Math.min(1,max/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
+    const max=900, scale=Math.min(1,max/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
     const w=Math.max(1,Math.round((img.naturalWidth||img.width)*scale));
     const h=Math.max(1,Math.round((img.naturalHeight||img.height)*scale));
     const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
     const ctx=canvas.getContext("2d",{alpha:false});if(!ctx)return original;
     ctx.drawImage(img,0,0,w,h);
-    return canvas.toDataURL("image/jpeg",.83);
+    return canvas.toDataURL("image/jpeg",.72);
   }catch{return original}
 }
 function updateScanReady(){
@@ -965,14 +977,20 @@ $("analyzeBtn").addEventListener("click",async()=>{
     }else{
       const res=await fetch("/api/identify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({front:frontData,back:backData}),signal:analyzeController.signal});
       data=await res.json();
-      if(!res.ok)throw new Error(data.error||"Could not identify this card.");
+      if(!res.ok){
+        const err=new Error(data.error||"Could not identify this card.");
+        err.status=res.status;
+        throw err;
+      }
       writeIdentifyCache(key,data);
       scans+=1;localStorage.setItem(SCAN_KEY,String(scans));
     }
     aiResult=data;renderAll();renderMatches(data);go("matches");
   }catch(err){
     const message=err.name==="AbortError"?"The scan took too long. Try again.":err.message;
-    $("analysisTitle").textContent="Scan couldn't finish";$("analysisSub").textContent=message;toast(message);
+    $("analysisTitle").textContent=err.status===429?"AI quota is cooling down":"Scan couldn't finish";
+    $("analysisSub").textContent=message;
+    toast(message);
   }finally{
     clearTimeout(timer);analyzeController=null;$("analyzeBtn").disabled=!(frontData&&backData);$("analyzeLabel").textContent="Identify card";
   }

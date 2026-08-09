@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"1.7.0"});
+  res.json({version:"1.7.1"});
 });
 
 app.use((req,res,next)=>{
@@ -160,8 +160,8 @@ app.post("/api/price",async(req,res)=>{
       return res.json({...cached.data,cached:true});
     }
 
-    const model=process.env.GEMINI_MODEL||"gemini-3-flash-preview";
-    const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const scanModels=String(process.env.GEMINI_SCAN_MODELS||"gemini-3.1-flash-lite,gemini-2.5-flash")
+      .split(",").map(x=>x.trim()).filter(Boolean);
     const exactCard=[year,set,player,cardNumber?`#${cardNumber}`:"",parallel,serialNumber,grade].filter(Boolean).join(" ");
     const prompt=`You are Card Vault's OPTIONAL live-market refresh tool.
 Search the live web for this exact sports card or the closest legitimate comparables.
@@ -249,7 +249,7 @@ app.get("/api/health",(req,res)=>{
     aiConfigured:Boolean(process.env.GEMINI_API_KEY),
     firebaseConfigured:Boolean(getFirebaseConfig()),
     appleAuthEnabled:String(process.env.APPLE_AUTH_ENABLED||"false").toLowerCase()==="true",
-    model:process.env.GEMINI_MODEL||"gemini-3-flash-preview"
+    model:String(process.env.GEMINI_SCAN_MODELS||"gemini-3.1-flash-lite,gemini-2.5-flash")
   });
 });
 
@@ -304,23 +304,42 @@ If image quality prevents reliable identification, say so in warning.
       generationConfig:{
         responseMimeType:"application/json",
         responseJsonSchema:resultSchema,
-        temperature:0.15
+        temperature:0.1,
+        maxOutputTokens:1800
       }
     };
 
-    const response=await fetch(endpoint,{
-      method:"POST",
-      headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
-      body:JSON.stringify(body)
-    });
-    const data=await response.json();
+    let response=null;
+    let data=null;
+    let usedModel="";
+    let lastStatus=0;
 
-    if(!response.ok){
-      console.error("Gemini error",response.status,data);
-      if(response.status===429)return res.status(429).json({error:"The AI free-tier limit was reached. Try again later."});
-      if(response.status===400)return res.status(502).json({error:"The AI model rejected this scan. Try clearer photos."});
-      return res.status(502).json({error:"The AI service could not process this scan."});
+    for(const model of scanModels){
+      const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+      response=await fetch(endpoint,{
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
+        body:JSON.stringify(body)
+      });
+      data=await response.json();
+      lastStatus=response.status;
+      usedModel=model;
+
+      if(response.ok)break;
+
+      console.warn("Gemini scan model failed",model,response.status,data?.error?.message||"");
+      // Only route to the next model for quota/capacity/model-availability failures.
+      if(![404,429,503].includes(response.status))break;
     }
+
+    if(!response?.ok){
+      console.error("All Gemini scan models failed",lastStatus,data);
+      if(lastStatus===429)return res.status(429).json({error:"The free AI quota is temporarily exhausted across the available scan models. Try again after the quota resets."});
+      if(lastStatus===400)return res.status(502).json({error:"The AI model rejected this scan. Try clearer photos."});
+      return res.status(502).json({error:"The AI scan service is temporarily unavailable."});
+    }
+
+    res.setHeader("X-Card-Vault-AI-Model",usedModel);
 
     let text=data?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
     text=text.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();
@@ -341,5 +360,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v1.7.0 running on port ${port}`);
+  console.log(`Card Vault v1.7.1 running on port ${port}`);
 });
