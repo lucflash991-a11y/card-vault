@@ -160,8 +160,8 @@ app.post("/api/price",async(req,res)=>{
       return res.json({...cached.data,cached:true});
     }
 
-    const scanModels=String(process.env.GEMINI_SCAN_MODELS||"gemini-3.1-flash-lite,gemini-2.5-flash")
-      .split(",").map(x=>x.trim()).filter(Boolean);
+    const model=process.env.GEMINI_MODEL||"gemini-3.1-flash-lite";
+    const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
     const exactCard=[year,set,player,cardNumber?`#${cardNumber}`:"",parallel,serialNumber,grade].filter(Boolean).join(" ");
     const prompt=`You are Card Vault's OPTIONAL live-market refresh tool.
 Search the live web for this exact sports card or the closest legitimate comparables.
@@ -260,8 +260,8 @@ app.post("/api/identify",scanRateLimit,async(req,res)=>{
     if(!front||!back)return res.status(400).json({error:"Two JPG, PNG, or WebP card images are required."});
     if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Card Vault AI is not configured yet."});
 
-    const model=process.env.GEMINI_MODEL||"gemini-3-flash-preview";
-    const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const scanModels=String(process.env.GEMINI_SCAN_MODELS||"gemini-3.1-flash-lite,gemini-2.5-flash")
+      .split(",").map(x=>x.trim()).filter(Boolean);
 
     const systemInstruction=`
 You are Card Vault AI, a conservative sports trading-card identification system.
@@ -350,8 +350,8 @@ If image quality prevents reliable identification, say so in warning.
     parsed.alternates=(parsed.alternates||[]).slice(0,3).map(x=>({...x,confidence:clampConfidence(x.confidence)}));
     res.json(parsed);
   }catch(error){
-    console.error(error);
-    res.status(500).json({error:"Card Vault AI couldn't process this scan. Try clearer photos."});
+    console.error("Identify route crash:",error);
+    res.status(500).json({error:"Card Vault AI hit a server error during this scan. Try again; if it repeats, check Render logs."});
   }
 });
 
