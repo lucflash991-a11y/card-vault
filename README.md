@@ -1,4 +1,4 @@
-# Card Vault v1.2.0
+# Card Vault v1.4.0 — Mega Update
 
 Major rebuild of the Card Vault PWA.
 
@@ -159,3 +159,50 @@ Gemini now uses Google Search grounding to research the exact card on the live w
 - Cloud thumbnails are aggressively compressed to keep Firestore documents safely below the size limit.
 - If a record is unusually large, Card Vault falls back to syncing only the front thumbnail rather than failing the card save.
 - Existing v1.1.9 free-tier AI pricing behavior remains intact.
+
+
+## v1.4.0 Mega Update
+
+This combines the planned v1.2.1, v1.3, and v1.4 work.
+
+### AI Efficiency (v1.2.1)
+- Identification + rough value estimate happen in ONE Gemini request.
+- No automatic second pricing request after every scan.
+- Exact scan results are cached on-device for 7 days.
+- Live pricing is optional/manual.
+- Live prices are cached for 24 hours in the browser and on the Render process.
+- HTTP 429 never triggers another fallback Gemini call; Card Vault keeps the existing scan estimate.
+- Duplicate button presses remain guarded.
+
+### Portfolio Dashboard (v1.2.1)
+- Invested amount
+- Profit/loss
+- Average card value
+- 30-day collection trend chart
+- Sport breakdown
+- Top-card highlight
+- Portfolio snapshots retained for up to 90 days on device
+
+### Pricing (v1.3)
+- Rough AI price included with card identification
+- Automatic value field population without another request
+- Optional Live Refresh using grounded web search
+- 24-hour caching
+- Pricing source, confidence, range, freshness, and source links
+- Price history per card
+- Live refresh rate limiting falls back to the existing estimate rather than failing the card
+
+### Card Details (v1.4)
+- Full front/back gallery
+- Favorite cards
+- Edit player, team, year, set, card number, parallel, serial, grade, paid, and value
+- Profit/loss
+- AI match confidence
+- Value intelligence
+- Live price refresh
+- Clickable price sources
+- Price-history chart
+- Notes
+- Delete card
+
+Cross-device cloud thumbnails, Google accounts, Firestore sync, dark mode, and the existing scan/save fixes remain intact.

@@ -70,6 +70,28 @@
           </div>
         </section>
 
+        <section class="analytics-strip">
+          <div><span>Invested</span><strong id="dashPaid">$0</strong></div>
+          <div><span>Profit</span><strong id="dashProfit">$0</strong></div>
+          <div><span>Avg card</span><strong id="dashAverage">$0</strong></div>
+        </section>
+
+        <section class="dashboard-panel">
+          <div class="dashboard-head">
+            <div><small>PORTFOLIO</small><h2>Collection trend</h2></div>
+            <span id="trendPeriod">30D</span>
+          </div>
+          <svg id="valueChart" class="value-chart" viewBox="0 0 320 110" preserveAspectRatio="none" aria-label="Collection value history"></svg>
+          <div class="chart-foot"><span id="chartStart">$0</span><span id="chartChange">No history yet</span><span id="chartEnd">$0</span></div>
+        </section>
+
+        <section class="dashboard-panel">
+          <div class="dashboard-head">
+            <div><small>BREAKDOWN</small><h2>By sport</h2></div>
+          </div>
+          <div id="sportBreakdown" class="sport-breakdown"><p class="muted-copy">Add cards to see your collection mix.</p></div>
+        </section>
+
         <button class="scan-cta" data-go="scan" type="button">
           <span class="scan-spark">✦</span>
           <span class="scan-cta-copy">
@@ -229,7 +251,7 @@
           <div class="form-line"><label for="fSerial">Serial #</label><input id="fSerial" placeholder="—"></div>
           <div class="form-line"><label for="fGrade">Grade</label><input id="fGrade" placeholder="Raw"></div>
           <div class="form-line money-line"><label for="fPaid">Paid</label><input id="fPaid" inputmode="decimal" placeholder="$0"></div>
-          <div class="form-line money-line"><label for="fValue">Est. value</label><input id="fValue" inputmode="decimal" placeholder="$0"></div><div class="price-intel"><div class="price-intel-head"><div><span class="price-kicker">AI MARKET ESTIMATE</span><strong id="marketValue">Not priced yet</strong></div><button id="updateValueBtn" class="price-update" type="button">Update Value</button></div><div id="priceMeta" class="price-meta">Waiting for eBay marketplace connection</div><div id="priceRange" class="price-meta hidden"></div><div id="priceConfidence" class="price-meta hidden"></div><div id="priceSources" class="price-sources hidden"></div></div>
+          <div class="form-line money-line"><label for="fValue">Est. value</label><input id="fValue" inputmode="decimal" placeholder="$0"></div><div class="price-intel"><div class="price-intel-head"><div><span class="price-kicker">AI VALUE</span><strong id="marketValue">Not priced yet</strong></div><button id="updateValueBtn" class="price-update" type="button">Update Value</button></div><div id="priceMeta" class="price-meta">Included with this scan • no extra AI call</div><div id="priceRange" class="price-meta hidden"></div><div id="priceConfidence" class="price-meta hidden"></div><div id="priceSources" class="price-sources hidden"></div></div>
           <label class="toggle-line">
             <input id="fRookie" type="checkbox">
             <span class="toggle-control"></span>
@@ -246,7 +268,10 @@
         <header class="page-header">
           <button class="back-circle" data-go="vault" type="button">‹</button>
           <div><small>CARD DETAILS</small><h1 id="detailHeader">Card</h1></div>
-          <button id="deleteCardBtn" class="danger-action" type="button">Delete</button>
+          <div class="detail-actions">
+            <button id="favoriteCardBtn" class="favorite-action" type="button" aria-label="Favorite card">☆</button>
+            <button id="deleteCardBtn" class="danger-action" type="button">Delete</button>
+          </div>
         </header>
 
         <div class="detail-gallery">
@@ -272,11 +297,39 @@
           <div><span>AI match</span><b id="detailConfidence">—</b></div>
         </div>
 
+        <div class="detail-section-title"><small>CARD INFO</small><h2>Details</h2></div>
         <div class="form-sheet">
+          <div class="form-line"><label for="dPlayer">Player</label><input id="dPlayer"></div>
+          <div class="form-line"><label for="dTeam">Team</label><input id="dTeam"></div>
+          <div class="form-line"><label for="dYear">Year</label><input id="dYear"></div>
+          <div class="form-line"><label for="dSet">Set</label><input id="dSet"></div>
+          <div class="form-line"><label for="dNumber">Card #</label><input id="dNumber"></div>
+          <div class="form-line"><label for="dParallel">Parallel</label><input id="dParallel"></div>
+          <div class="form-line"><label for="dSerial">Serial #</label><input id="dSerial"></div>
           <div class="form-line"><label for="dGrade">Grade</label><input id="dGrade"></div>
           <div class="form-line money-line"><label for="dPaid">Paid</label><input id="dPaid" inputmode="decimal"></div>
           <div class="form-line money-line"><label for="dValue">Est. value</label><input id="dValue" inputmode="decimal"></div>
         </div>
+
+        <div class="detail-section-title"><small>MARKET</small><h2>Value intelligence</h2></div>
+        <section class="detail-market-card">
+          <div class="detail-market-top">
+            <div><span>Current estimate</span><strong id="detailMarketValue">$0</strong></div>
+            <button id="detailRefreshPriceBtn" class="small-pill-button" type="button">Live refresh</button>
+          </div>
+          <div id="detailPriceMeta" class="detail-market-meta">No pricing data yet.</div>
+          <div id="detailPriceSources" class="detail-source-row"></div>
+        </section>
+
+        <div class="detail-section-title"><small>HISTORY</small><h2>Price history</h2></div>
+        <section class="detail-history-card">
+          <svg id="detailPriceChart" class="detail-price-chart" viewBox="0 0 320 100" preserveAspectRatio="none"></svg>
+          <p id="detailPriceHistoryText">No price history yet.</p>
+        </section>
+
+        <div class="detail-section-title"><small>PERSONAL</small><h2>Notes</h2></div>
+        <textarea id="dNotes" class="notes-field" rows="4" placeholder="Why you bought it, where you got it, anything you want to remember..."></textarea>
+
         <button id="saveDetailBtn" class="primary-button" type="button"><span>Save changes</span><span>✓</span></button>
       </section>
 
@@ -317,7 +370,7 @@
         </div>
 
         <p class="settings-footnote">When signed in, Card Vault can sync your vault through Firebase. Guest mode stays on this device.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.2.0</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.4.0</p>
       </section>
     </main>
 
@@ -331,6 +384,6 @@
 
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=120"></script>
+  <script type="module" src="/app.js?v=140"></script>
 </body>
 </html>

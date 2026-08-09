@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"1.2.0"});
+  res.json({version:"1.4.0"});
 });
 
 app.use((req,res,next)=>{
@@ -114,15 +114,28 @@ const matchSchema={
   },
   required:["confidence","player","team","sport","year","manufacturer","set","cardNumber","parallel","serialNumber","rookie","grade","evidence"]
 };
+const marketEstimateSchema={
+  type:"object",
+  properties:{
+    value:{type:"number"},
+    low:{type:"number"},
+    high:{type:"number"},
+    confidence:{type:"string",enum:["High","Medium","Low"]},
+    note:{type:"string"}
+  },
+  required:["value","low","high","confidence","note"]
+};
+
 const resultSchema={
   type:"object",
   properties:{
     primary:matchSchema,
     alternates:{type:"array",maxItems:3,items:matchSchema},
+    marketEstimate:marketEstimateSchema,
     imageQuality:{type:"string",enum:["good","usable","poor"]},
     warning:{type:"string"}
   },
-  required:["primary","alternates","imageQuality","warning"]
+  required:["primary","alternates","marketEstimate","imageQuality","warning"]
 };
 
 function getFirebaseConfig(){
@@ -131,18 +144,28 @@ function getFirebaseConfig(){
   try{return JSON.parse(raw)}catch{return null}
 }
 
+const priceMemoryCache=new Map();
+function priceKey(body){
+  return [body.player,body.year,body.set,body.cardNumber,body.parallel,body.serialNumber,body.grade].map(v=>String(v||"").trim().toLowerCase()).join("|");
+}
 app.post("/api/price",async(req,res)=>{
   try{
     const {player="",team="",sport="",year="",set="",cardNumber="",parallel="",serialNumber="",grade=""}=req.body||{};
     if(!player&&!set)return res.status(400).json({error:"Missing card identity"});
-    if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"AI pricing is not configured."});
+    if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"AI market search is not configured."});
+
+    const key=priceKey(req.body||{});
+    const cached=priceMemoryCache.get(key);
+    if(cached && Date.now()-cached.savedAt<24*60*60*1000){
+      return res.json({...cached.data,cached:true});
+    }
 
     const model=process.env.GEMINI_MODEL||"gemini-3-flash-preview";
     const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
     const exactCard=[year,set,player,cardNumber?`#${cardNumber}`:"",parallel,serialNumber,grade].filter(Boolean).join(" ");
+    const prompt=`You are Card Vault's OPTIONAL live-market refresh tool.
+Search the live web for this exact sports card or the closest legitimate comparables.
 
-    const webPrompt=`You are the market-pricing engine for Card Vault.
-Card:
 Player: ${player}
 Team: ${team}
 Sport: ${sport}
@@ -153,110 +176,54 @@ Parallel: ${parallel}
 Serial: ${serialNumber}
 Grade/condition: ${grade}
 
-Search the live web for this exact sports card or the closest legitimate comparables. Prefer eBay evidence when available, then reputable card-market sources. Match year, set, card number, parallel, serial numbering, and grade closely. Ignore lots, packs, unrelated cards, different parallels, and obvious outliers. Asking prices are not sold prices, so reduce confidence if only asking prices are available. Never invent sales or prices.
+Prefer eBay evidence when it appears in search, then reputable card-market sources.
+Do not mix different parallels, lots, packs, reprints, or obviously different grades.
+Asking prices are not sold prices, so reduce confidence if only asking prices are found.
+Never invent sales or prices.
 
 Return ONLY JSON:
 {"value":18.50,"low":14.00,"high":23.00,"confidence":"High|Medium|Low","note":"short basis for estimate","comparablesUsed":5}
 
-Exact-card search phrase: ${exactCard}`;
+Exact search phrase: ${exactCard}`;
 
-    const makeRequest=async(body)=>fetch(endpoint,{
+    const response=await fetch(endpoint,{
       method:"POST",
-      headers:{
-        "Content-Type":"application/json",
-        "x-goog-api-key":process.env.GEMINI_API_KEY
-      },
-      body:JSON.stringify(body)
+      headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
+      body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt}]}],tools:[{google_search:{}}],generationConfig:{temperature:0.15}})
     });
-
-    let response=await makeRequest({
-      contents:[{role:"user",parts:[{text:webPrompt}]}],
-      tools:[{google_search:{}}],
-      generationConfig:{temperature:0.2}
-    });
-
-    let data=await response.json();
-    let fallbackUsed=false;
-
-    // Free-tier 429 fallback: use the same Gemini key WITHOUT Google Search grounding.
-    // This avoids an outright failure while keeping the estimate clearly labeled limited-data.
-    if(response.status===429){
-      fallbackUsed=true;
-
-      const fallbackPrompt=`You are Card Vault's fallback sports-card valuation assistant.
-You cannot use live web search in this fallback mode.
-
-Card:
-Player: ${player}
-Team: ${team}
-Sport: ${sport}
-Year: ${year}
-Set: ${set}
-Card number: ${cardNumber}
-Parallel: ${parallel}
-Serial: ${serialNumber}
-Grade/condition: ${grade}
-
-Estimate a conservative approximate current market value in USD using your general knowledge of sports-card markets and the exact card identity provided. Be cautious. If the card is a common modern base/raw card, do not overvalue it. If the exact card is uncertain, use a wider range and Low confidence.
-
-Return ONLY JSON:
-{"value":8.00,"low":4.00,"high":12.00,"confidence":"Low|Medium","note":"AI estimate using limited data; live marketplace search was rate-limited","comparablesUsed":0}`;
-
-      response=await makeRequest({
-        contents:[{role:"user",parts:[{text:fallbackPrompt}]}],
-        generationConfig:{temperature:0.15}
-      });
-      data=await response.json();
-    }
-
+    const data=await response.json();
+    if(response.status===429)return res.status(429).json({error:"Live AI pricing is cooling down. Your scan estimate is still available."});
     if(!response.ok){
       console.error("Gemini pricing error:",response.status,data);
-      if(response.status===429){
-        return res.status(429).json({error:"Free Gemini quota is temporarily exhausted. Try again later."});
-      }
-      return res.status(502).json({error:"AI pricing could not run."});
+      return res.status(502).json({error:"Live market refresh could not run."});
     }
 
     const candidate=data?.candidates?.[0];
     let text=candidate?.content?.parts?.map(p=>p.text||"").join("")||"";
     text=text.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();
     const jsonMatch=text.match(/\{[\s\S]*\}/);
-    if(!jsonMatch)return res.status(502).json({error:"AI pricing returned an unreadable result."});
-
+    if(!jsonMatch)return res.status(502).json({error:"Live market refresh returned an unreadable result."});
     const parsed=JSON.parse(jsonMatch[0]);
     const value=Number(parsed.value),low=Number(parsed.low),high=Number(parsed.high);
-    if(!Number.isFinite(value)||!Number.isFinite(low)||!Number.isFinite(high)||value<0||low<0||high<0){
-      return res.status(502).json({error:"AI pricing returned invalid numbers."});
-    }
+    if(!Number.isFinite(value)||!Number.isFinite(low)||!Number.isFinite(high))return res.status(502).json({error:"Live market refresh returned invalid numbers."});
 
     const chunks=candidate?.groundingMetadata?.groundingChunks||[];
-    const sources=[];
-    const seen=new Set();
+    const sources=[];const seen=new Set();
     for(const chunk of chunks){
-      const web=chunk?.web;
-      if(!web?.uri||seen.has(web.uri))continue;
-      seen.add(web.uri);
-      sources.push({title:web.title||"Web source",url:web.uri});
-      if(sources.length>=5)break;
+      const web=chunk?.web;if(!web?.uri||seen.has(web.uri))continue;seen.add(web.uri);
+      sources.push({title:web.title||"Web source",url:web.uri});if(sources.length>=5)break;
     }
-
-    res.json({
-      value:Math.round(value*100)/100,
-      low:Math.round(Math.min(low,high)*100)/100,
-      high:Math.round(Math.max(low,high)*100)/100,
-      confidence:fallbackUsed ? (parsed.confidence==="Medium"?"Medium":"Low") :
-        (["High","Medium","Low"].includes(parsed.confidence)?parsed.confidence:"Low"),
-      note:fallbackUsed
-        ? "Limited-data AI estimate because live marketplace search hit the free-tier rate limit."
-        : String(parsed.note||"AI estimate based on current web comparables.").slice(0,220),
-      comps:fallbackUsed ? 0 : Number(parsed.comparablesUsed||sources.length||0),
-      source:fallbackUsed ? "AI estimate • limited data" : "AI web estimate",
-      sources:fallbackUsed ? [] : sources,
-      fallbackUsed
-    });
+    const result={
+      value:Math.round(value*100)/100,low:Math.round(Math.min(low,high)*100)/100,high:Math.round(Math.max(low,high)*100)/100,
+      confidence:["High","Medium","Low"].includes(parsed.confidence)?parsed.confidence:"Low",
+      note:String(parsed.note||"Live AI estimate based on current web comparables.").slice(0,220),
+      comps:Number(parsed.comparablesUsed||sources.length||0),source:"Live AI market estimate",sources
+    };
+    priceMemoryCache.set(key,{savedAt:Date.now(),data:result});
+    res.json(result);
   }catch(e){
     console.error("Price endpoint error:",e);
-    res.status(500).json({error:"AI market-pricing engine failed."});
+    res.status(500).json({error:"Live market refresh failed."});
   }
 });
 
@@ -310,7 +277,11 @@ Do not give high confidence merely because the player is obvious.
 If exact parallel or variation is uncertain, lower confidence and use alternates.
 Never invent a serial number. Use an empty string when unreadable.
 If a grading slab is visibly present, report the visible slab grade; otherwise grade is "Raw".
-Do not estimate price. Do not assign a numeric condition grade from card appearance.
+Also provide a ROUGH market estimate for the PRIMARY card in marketEstimate using general card-market knowledge.
+This estimate is intentionally approximate and must NOT claim to be live eBay sold data.
+Be conservative. Common modern raw base cards should generally be valued modestly.
+Widen the low/high range and lower confidence when the exact parallel, grade, or market is uncertain.
+Do not assign a numeric condition grade from raw-card appearance.
 Evidence should contain brief visible clues supporting each candidate.
 If image quality prevents reliable identification, say so in warning.
 `;
@@ -365,5 +336,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v1.0 running on port ${port}`);
+  console.log(`Card Vault v1.4.0 running on port ${port}`);
 });

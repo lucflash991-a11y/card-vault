@@ -5,6 +5,10 @@ const SCAN_KEY = "cardvault.v10.scans";
 const THEME_KEY = "cardvault.v10.theme";
 const GUEST_KEY = "cardvault.v10.guest";
 const MIGRATION_KEY = "cardvault.v10.migrated";
+const IDENTIFY_CACHE_PREFIX="cardvault.identify.v140.";
+const IDENTIFY_CACHE_TTL=7*24*60*60*1000;
+const PORTFOLIO_HISTORY_KEY="cardvault.portfolio.v140.history";
+const PRICE_FRESH_MS=24*60*60*1000;
 const IMAGE_CACHE_PREFIX = "cardvault.v106.image.";
 
 function saveLocalCardImages(card){
@@ -87,7 +91,70 @@ let activeScanId = null;
 let savingCard = false;
 let pricingState={status:"idle",value:null,low:null,high:null,confidence:null,comps:0,source:"pending"};
 const PRICE_CACHE_PREFIX="cardvault.price.v119.";
-const PRICE_CACHE_TTL=12*60*60*1000; // 12 hours
+const PRICE_CACHE_TTL=24*60*60*1000; // 24 hours
+
+
+async function stableImageKey(){
+  try{
+    const input=`${frontData}|${backData}`;
+    const bytes=new TextEncoder().encode(input);
+    const digest=await crypto.subtle.digest("SHA-256",bytes);
+    return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
+  }catch{
+    return `${frontData.length}:${backData.length}:${frontData.slice(-80)}:${backData.slice(-80)}`;
+  }
+}
+
+function readIdentifyCache(key){
+  try{
+    const v=JSON.parse(localStorage.getItem(IDENTIFY_CACHE_PREFIX+key)||"null");
+    if(!v||Date.now()-Number(v.savedAt||0)>IDENTIFY_CACHE_TTL)return null;
+    return v.data||null;
+  }catch{return null}
+}
+function writeIdentifyCache(key,data){
+  try{localStorage.setItem(IDENTIFY_CACHE_PREFIX+key,JSON.stringify({savedAt:Date.now(),data}))}catch{}
+}
+
+function recordPortfolioSnapshot(){
+  const total=cards.reduce((s,c)=>s+Number(c.value||0),0);
+  let history=[];
+  try{history=JSON.parse(localStorage.getItem(PORTFOLIO_HISTORY_KEY)||"[]")}catch{}
+  if(!Array.isArray(history))history=[];
+  const day=new Date().toISOString().slice(0,10);
+  const last=history[history.length-1];
+  if(last?.day===day){last.value=total;last.at=Date.now()}
+  else history.push({day,value:total,at:Date.now()});
+  history=history.slice(-90);
+  localStorage.setItem(PORTFOLIO_HISTORY_KEY,JSON.stringify(history));
+}
+function portfolioHistory(){
+  try{
+    const v=JSON.parse(localStorage.getItem(PORTFOLIO_HISTORY_KEY)||"[]");
+    return Array.isArray(v)?v:[];
+  }catch{return []}
+}
+function priceAgeText(ts){
+  if(!ts)return "Not refreshed";
+  const diff=Math.max(0,Date.now()-ts);
+  const mins=Math.floor(diff/60000);
+  if(mins<2)return "Updated just now";
+  if(mins<60)return `Updated ${mins}m ago`;
+  const hrs=Math.floor(mins/60);
+  if(hrs<24)return `Updated ${hrs}h ago`;
+  const days=Math.floor(hrs/24);
+  return `Updated ${days}d ago`;
+}
+function pushPriceHistory(card,value,source){
+  const arr=Array.isArray(card.priceHistory)?[...card.priceHistory]:[];
+  const n=Number(value||0);
+  if(!Number.isFinite(n)||n<0)return arr.slice(-30);
+  const last=arr[arr.length-1];
+  if(!last || Math.abs(Number(last.value)-n)>.001 || Date.now()-Number(last.at||0)>6*60*60*1000){
+    arr.push({at:Date.now(),value:n,source:source||""});
+  }
+  return arr.slice(-30);
+}
 
 function priceFingerprint(){
   return [
@@ -122,23 +189,37 @@ function renderPricing(){
   const v=$("marketValue"),m=$("priceMeta"),r=$("priceRange"),c=$("priceConfidence"),b=$("updateValueBtn"),sources=$("priceSources");
   if(!v)return;
   b.disabled=pricingState.status==="loading";
-  b.textContent=pricingState.status==="loading"?"Searching…":"Update Value";
+  b.textContent=pricingState.status==="loading"?"Refreshing…":"Live refresh";
   if(sources){sources.innerHTML="";sources.classList.add("hidden")}
+
   if(pricingState.status==="loading"){
-    v.textContent="Searching the market…";
-    m.textContent="Gemini is checking live web sources for comparable cards";
+    v.textContent=pricingState.value!=null?`$${Number(pricingState.value).toFixed(2)}`:"Checking…";
+    m.textContent="Optional live refresh • cached for 24 hours";
     r.classList.add("hidden");c.classList.add("hidden");return;
   }
+
   if(pricingState.value!=null){
     v.textContent=`$${Number(pricingState.value).toFixed(2)}`;
-    m.textContent=`${pricingState.source||"AI web estimate"} • ${pricingState.comps||0} useful source${pricingState.comps===1?"":"s"}`;
-    if(pricingState.low!=null&&pricingState.high!=null){r.textContent=`Estimated range $${Number(pricingState.low).toFixed(2)}–$${Number(pricingState.high).toFixed(2)}`;r.classList.remove("hidden")}else r.classList.add("hidden");
-    if(pricingState.confidence){c.textContent=`Pricing confidence: ${pricingState.confidence}${pricingState.note?` • ${pricingState.note}`:""}`;c.classList.remove("hidden")}else c.classList.add("hidden");
-    if(sources&&Array.isArray(pricingState.sources)&&pricingState.sources.length){pricingState.sources.slice(0,5).forEach((src,i)=>{const a=document.createElement("a");a.className="price-source-link";a.href=src.url;a.target="_blank";a.rel="noopener noreferrer";a.textContent=src.title||`Source ${i+1}`;sources.appendChild(a)});sources.classList.remove("hidden")}
+    const label=pricingState.source||"Scan estimate";
+    m.textContent=`${label}${pricingState.updatedAt?` • ${priceAgeText(pricingState.updatedAt)}`:" • included with scan"}`;
+    if(pricingState.low!=null&&pricingState.high!=null){
+      r.textContent=`Estimated range $${Number(pricingState.low).toFixed(2)}–$${Number(pricingState.high).toFixed(2)}`;
+      r.classList.remove("hidden");
+    }else r.classList.add("hidden");
+    if(pricingState.confidence){
+      c.textContent=`Pricing confidence: ${pricingState.confidence}${pricingState.note?` • ${pricingState.note}`:""}`;
+      c.classList.remove("hidden");
+    }else c.classList.add("hidden");
+    if(sources&&Array.isArray(pricingState.sources)&&pricingState.sources.length){
+      pricingState.sources.slice(0,5).forEach((src,i)=>{
+        const a=document.createElement("a");a.className="price-source-link";a.href=src.url;a.target="_blank";a.rel="noopener noreferrer";a.textContent=src.title||`Source ${i+1}`;sources.appendChild(a)
+      });
+      sources.classList.remove("hidden");
+    }
     return;
   }
   v.textContent="Not priced yet";
-  m.textContent=pricingState.status==="unavailable"?"AI market search unavailable right now":"Waiting for market search";
+  m.textContent="A rough value will come from the same AI scan — no extra request.";
   r.classList.add("hidden");c.classList.add("hidden");
 }
 
@@ -153,56 +234,52 @@ async function updateMarketValue(force=false){
       renderPricing();
       return;
     }
+    return; // automatic flow never makes a second AI request
   }
 
-  pricingState={...pricingState,status:"loading"};
+  const stale=readPriceCache();
+  pricingState={...(stale||pricingState),status:"loading"};
   renderPricing();
 
   try{
     const payload={
-      player:$("fPlayer").value.trim(),
-      team:$("fTeam").value.trim(),
-      sport:$("fSport").value,
-      year:$("fYear").value.trim(),
-      set:$("fSet").value.trim(),
-      cardNumber:$("fNumber").value.trim(),
-      parallel:$("fParallel").value.trim(),
-      serialNumber:$("fSerial").value.trim(),
-      grade:$("fGrade").value.trim()
+      player:$("fPlayer").value.trim(),team:$("fTeam").value.trim(),sport:$("fSport").value,
+      year:$("fYear").value.trim(),set:$("fSet").value.trim(),cardNumber:$("fNumber").value.trim(),
+      parallel:$("fParallel").value.trim(),serialNumber:$("fSerial").value.trim(),grade:$("fGrade").value.trim()
     };
-
-    const res=await fetch("/api/price",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(payload)
-    });
+    const res=await fetch("/api/price",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
     const d=await res.json().catch(()=>({}));
+
+    if(res.status===429){
+      if(stale){
+        pricingState={...stale,status:"ready",note:`${stale.note||""} • Live refresh is cooling down.`};
+        $("fValue").value=Number(stale.value).toFixed(2);
+        renderPricing();
+        toast("Using cached value while live AI cools down.");
+        return;
+      }
+      pricingState={...pricingState,status:"ready",note:"Live refresh is cooling down. Scan estimate kept."};
+      renderPricing();
+      toast("Live pricing is cooling down — keeping the scan estimate.");
+      return;
+    }
     if(!res.ok)throw new Error(d.error||`Pricing request failed (${res.status})`);
 
     pricingState={
-      status:"ready",
-      value:d.value,
-      low:d.low,
-      high:d.high,
-      confidence:d.confidence||"Medium",
-      comps:d.sources?.length||d.comps||0,
-      source:d.source||"AI web estimate",
-      sources:d.sources||[],
-      note:d.note||""
+      status:"ready",value:d.value,low:d.low,high:d.high,confidence:d.confidence||"Medium",
+      comps:d.sources?.length||d.comps||0,source:d.source||"Live AI market estimate",
+      sources:d.sources||[],note:d.note||"",updatedAt:Date.now()
     };
-
     $("fValue").value=Number(d.value).toFixed(2);
     writePriceCache(pricingState);
     renderPricing();
-
-    if(d.fallbackUsed){
-      toast("Free-tier limit hit — using limited-data AI estimate.");
-    }
   }catch(e){
     console.error("Pricing error:",e);
-    pricingState={...pricingState,status:"unavailable",value:null};
-    renderPricing();
-    toast("AI market estimate unavailable right now.");
+    if(stale){
+      pricingState={...stale,status:"ready",note:`${stale.note||""} • Refresh unavailable.`};
+      $("fValue").value=Number(stale.value).toFixed(2);renderPricing();
+    }
+    toast("Live refresh unavailable — your current estimate is safe.");
   }
 }
 let analyzeController = null;
@@ -270,6 +347,7 @@ function dedupeCards(input){
 }
 
 function normalizeCard(c){
+  const history=Array.isArray(c.priceHistory)?c.priceHistory:[];
   return {
     id:c.id || uid(),
     player:c.player || "Unknown card",
@@ -284,7 +362,17 @@ function normalizeCard(c){
     paid:Number(c.paid || 0),
     value:Number(c.value || 0),
     rookie:Boolean(c.rookie),
+    favorite:Boolean(c.favorite),
+    notes:String(c.notes||""),
     aiConfidence:Number(c.aiConfidence || c.confidence || 0),
+    priceSource:String(c.priceSource||""),
+    priceConfidence:String(c.priceConfidence||""),
+    priceLow:Number(c.priceLow||0),
+    priceHigh:Number(c.priceHigh||0),
+    priceNote:String(c.priceNote||""),
+    priceUpdatedAt:Number(c.priceUpdatedAt||0),
+    priceSources:Array.isArray(c.priceSources)?c.priceSources.slice(0,5):[],
+    priceHistory:history.slice(-30).map(x=>({at:Number(x.at||0),value:Number(x.value||0),source:String(x.source||"")})).filter(x=>x.at&&Number.isFinite(x.value)),
     front:c.front || "",
     back:c.back || "",
     createdAt:Number(c.createdAt || Date.now())
@@ -361,20 +449,55 @@ function renderProfile(){
   $("accountActionBtn").textContent=currentUser ? "Sign out" : "Sign in";
 }
 
+function renderValueChart(){
+  const svg=$("valueChart");if(!svg)return;
+  let hist=portfolioHistory().slice(-30);
+  const current=cards.reduce((s,c)=>s+Number(c.value||0),0);
+  if(!hist.length)hist=[{value:current,at:Date.now()}];
+  const values=hist.map(x=>Number(x.value||0));
+  const max=Math.max(...values,1),min=Math.min(...values,0);
+  const range=Math.max(1,max-min);
+  const points=values.map((v,i)=>{
+    const x=values.length===1?160:(i/(values.length-1))*314+3;
+    const y=100-((v-min)/range)*84;
+    return [x,y];
+  });
+  const line=points.map(p=>p.join(",")).join(" ");
+  const fill=`3,105 ${line} 317,105`;
+  svg.innerHTML=`<line class="chart-grid-line" x1="0" x2="320" y1="25" y2="25"/><line class="chart-grid-line" x1="0" x2="320" y1="65" y2="65"/><polygon class="chart-fill" points="${fill}"/><polyline class="chart-line" points="${line}"/>`;
+  if(points.length)$("valueChart").insertAdjacentHTML("beforeend",`<circle class="chart-dot" cx="${points.at(-1)[0]}" cy="${points.at(-1)[1]}" r="4"/>`);
+  const first=values[0]||0,last=values.at(-1)||0,delta=last-first;
+  $("chartStart").textContent=money(first);$("chartEnd").textContent=money(last);
+  $("chartChange").textContent=values.length<2?"Tracking starts now":`${delta>=0?"+":""}${money(delta)} over ${values.length} day${values.length===1?"":"s"}`;
+  $("chartChange").style.color=delta<0?"var(--danger)":"var(--good)";
+}
+function renderSportBreakdown(){
+  const wrap=$("sportBreakdown");if(!wrap)return;
+  if(!cards.length){wrap.innerHTML='<p class="muted-copy">Add cards to see your collection mix.</p>';return}
+  const groups={};
+  cards.forEach(c=>{const k=c.sport||"Other";groups[k]=(groups[k]||0)+Number(c.value||0)});
+  const total=Object.values(groups).reduce((a,b)=>a+b,0)||cards.length;
+  if(total===cards.length && Object.values(groups).every(v=>v===0)){
+    Object.keys(groups).forEach(k=>groups[k]=cards.filter(c=>(c.sport||"Other")===k).length);
+  }
+  const denom=Object.values(groups).reduce((a,b)=>a+b,0)||1;
+  wrap.innerHTML=Object.entries(groups).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([sport,val])=>{
+    const pct=Math.round(val/denom*100);
+    return `<div class="sport-row"><span>${esc(sport)}</span><div class="sport-bar"><i style="width:${pct}%"></i></div><b>${pct}%</b></div>`;
+  }).join("");
+}
 function stats(){
   const total=cards.reduce((s,c)=>s+Number(c.value||0),0);
   const paid=cards.reduce((s,c)=>s+Number(c.paid||0),0);
   const profit=total-paid;
   const rookies=cards.filter(c=>c.rookie).length;
-  $("homeValue").textContent=money(total);
-  $("homeCards").textContent=cards.length;
-  $("homeScans").textContent=scans;
-  $("homeRookies").textContent=rookies;
-  $("homeProfit").textContent=`${profit>=0?"+":""}${money(profit)}`;
-  $("homeProfit").style.color=profit<0?"#ff9ba1":"";
-  $("profileCards").textContent=cards.length;
-  $("profileValue").textContent=money(total);
-  $("profileScans").textContent=scans;
+  const avg=cards.length?total/cards.length:0;
+  $("homeValue").textContent=money(total);$("homeCards").textContent=cards.length;$("homeScans").textContent=scans;$("homeRookies").textContent=rookies;
+  $("homeProfit").textContent=`${profit>=0?"+":""}${money(profit)}`;$("homeProfit").style.color=profit<0?"#ff9ba1":"";
+  $("profileCards").textContent=cards.length;$("profileValue").textContent=money(total);$("profileScans").textContent=scans;
+  $("dashPaid").textContent=money(paid);$("dashProfit").textContent=`${profit>=0?"+":""}${money(profit)}`;$("dashProfit").style.color=profit<0?"var(--danger)":"var(--good)";
+  $("dashAverage").textContent=money(avg);
+  recordPortfolioSnapshot();renderValueChart();renderSportBreakdown();
 }
 
 function cardDescription(c){
@@ -382,9 +505,9 @@ function cardDescription(c){
 }
 function createCardTile(c){
   const btn=document.createElement("button");
-  btn.type="button";btn.className="collection-card";btn.dataset.cardId=c.id;
+  btn.type="button";btn.className="collection-card"+(c.favorite?" favorite-card":"");btn.dataset.cardId=c.id;
   btn.innerHTML=`
-    <img src="${c.front || "/icons/card-placeholder.svg"}" alt="${esc(c.player)} card">
+    ${c.favorite?'<span class="fav-corner">★</span>':""}<img src="${c.front || "/icons/card-placeholder.svg"}" alt="${esc(c.player)} card">
     <div class="collection-copy">
       <h3>${esc(c.player)}</h3>
       <p>${esc(cardDescription(c))}</p>
@@ -443,26 +566,46 @@ $("sportChips").addEventListener("click",e=>{
 function openDetails(id){
   const c=cards.find(x=>x.id===id);if(!c)return;
   currentDetailId=id;detailSide="front";
-  $("detailHeader").textContent=c.player;
-  $("detailPlayer").textContent=c.player;
-  $("detailDescription").textContent=cardDescription(c);
-  $("detailValue").textContent=money(c.value);
-  $("detailPaid").textContent=money(c.paid);
+  $("detailHeader").textContent=c.player;$("detailPlayer").textContent=c.player;$("detailDescription").textContent=cardDescription(c);
+  $("detailValue").textContent=money(c.value);$("detailPaid").textContent=money(c.paid);
   const p=Number(c.value)-Number(c.paid);
-  $("detailProfit").textContent=`${p>=0?"+":""}${money(p)}`;
-  $("detailProfit").style.color=p<0?"var(--danger)":"var(--good)";
-  $("detailConfidence").textContent=c.aiConfidence?`${Math.round(c.aiConfidence)}%`:"—";
-  $("detailRookie").classList.toggle("hidden",!c.rookie);
-  $("dGrade").value=c.grade||"";
-  $("dPaid").value=c.paid||"";
-  $("dValue").value=c.value||"";
-  renderDetailImage(c);
-  go("details");
+  $("detailProfit").textContent=`${p>=0?"+":""}${money(p)}`;$("detailProfit").style.color=p<0?"var(--danger)":"var(--good)";
+  $("detailConfidence").textContent=c.aiConfidence?`${Math.round(c.aiConfidence)}%`:"—";$("detailRookie").classList.toggle("hidden",!c.rookie);
+  $("favoriteCardBtn").textContent=c.favorite?"★":"☆";$("favoriteCardBtn").classList.toggle("active",c.favorite);
+
+  $("dPlayer").value=c.player||"";$("dTeam").value=c.team||"";$("dYear").value=c.year||"";$("dSet").value=c.set||"";
+  $("dNumber").value=c.number||"";$("dParallel").value=c.parallel||"";$("dSerial").value=c.serial||"";
+  $("dGrade").value=c.grade||"";$("dPaid").value=c.paid||"";$("dValue").value=c.value||"";$("dNotes").value=c.notes||"";
+
+  $("detailMarketValue").textContent=money(c.value);
+  $("detailPriceMeta").textContent=c.priceUpdatedAt
+    ? `${c.priceSource||"AI estimate"} • ${priceAgeText(c.priceUpdatedAt)} • ${c.priceConfidence||"Unknown"} confidence`
+    : (c.priceSource||"Scan estimate • included with identification");
+  const srcWrap=$("detailPriceSources");srcWrap.innerHTML="";
+  (c.priceSources||[]).slice(0,5).forEach((src,i)=>{
+    const a=document.createElement("a");a.href=src.url;a.target="_blank";a.rel="noopener noreferrer";a.textContent=src.title||`Source ${i+1}`;srcWrap.appendChild(a)
+  });
+  renderDetailPriceHistory(c);
+  renderDetailImage(c);go("details");
 }
 function renderDetailImage(c){
   $("detailImage").src=detailSide==="back"?(c.back||c.front):(c.front||c.back);
   $("showFrontBtn").classList.toggle("active",detailSide==="front");
   $("showBackBtn").classList.toggle("active",detailSide==="back");
+}
+
+function renderDetailPriceHistory(c){
+  const svg=$("detailPriceChart"),text=$("detailPriceHistoryText");if(!svg||!text)return;
+  const hist=Array.isArray(c.priceHistory)?c.priceHistory.slice(-20):[];
+  if(!hist.length){
+    svg.innerHTML="";text.textContent="No price history yet. Future value updates will appear here.";return;
+  }
+  const vals=hist.map(x=>Number(x.value||0));const max=Math.max(...vals,1),min=Math.min(...vals,0),range=Math.max(1,max-min);
+  const pts=vals.map((v,i)=>[(vals.length===1?160:(i/(vals.length-1))*314+3),94-((v-min)/range)*80]);
+  const line=pts.map(p=>p.join(",")).join(" ");
+  svg.innerHTML=`<line class="chart-grid-line" x1="0" x2="320" y1="25" y2="25"/><line class="chart-grid-line" x1="0" x2="320" y1="65" y2="65"/><polyline class="chart-line" points="${line}"/><circle class="chart-dot" cx="${pts.at(-1)[0]}" cy="${pts.at(-1)[1]}" r="4"/>`;
+  const delta=vals.at(-1)-vals[0];
+  text.textContent=`${hist.length} value update${hist.length===1?"":"s"} • ${delta>=0?"+":""}${money(delta)} since first tracked price`;
 }
 $("showFrontBtn").addEventListener("click",()=>{detailSide="front";const c=cards.find(x=>x.id===currentDetailId);if(c)renderDetailImage(c)});
 $("showBackBtn").addEventListener("click",()=>{detailSide="back";const c=cards.find(x=>x.id===currentDetailId);if(c)renderDetailImage(c)});
@@ -542,11 +685,36 @@ $("saveDetailBtn").addEventListener("click",async()=>{
   const c=cards.find(x=>x.id===currentDetailId);if(!c)return;
   const btn=$("saveDetailBtn");btn.disabled=true;
   try{
-    await persistCard({...c,grade:$("dGrade").value.trim(),paid:Number($("dPaid").value||0),value:Number($("dValue").value||0)});
-    toast("Card updated");
-    openDetails(c.id);
+    const newValue=Number($("dValue").value||0);
+    const updated={
+      ...c,player:$("dPlayer").value.trim()||"Unknown card",team:$("dTeam").value.trim(),year:$("dYear").value.trim(),
+      set:$("dSet").value.trim(),number:$("dNumber").value.trim(),parallel:$("dParallel").value.trim(),serial:$("dSerial").value.trim(),
+      grade:$("dGrade").value.trim(),paid:Number($("dPaid").value||0),value:newValue,notes:$("dNotes").value.trim()
+    };
+    if(Math.abs(newValue-Number(c.value||0))>.001)updated.priceHistory=pushPriceHistory(c,newValue,"Manual edit");
+    await persistCard(updated);toast("Card updated");openDetails(c.id);
   }catch{toast("Could not save changes");}
   finally{btn.disabled=false}
+});
+$("favoriteCardBtn").addEventListener("click",async()=>{
+  const c=cards.find(x=>x.id===currentDetailId);if(!c)return;
+  try{await persistCard({...c,favorite:!c.favorite});openDetails(c.id);toast(c.favorite?"Removed from favorites":"Added to favorites")}catch{toast("Could not update favorite")}
+});
+$("detailRefreshPriceBtn").addEventListener("click",async()=>{
+  const c=cards.find(x=>x.id===currentDetailId);if(!c)return;
+  const btn=$("detailRefreshPriceBtn");btn.disabled=true;btn.textContent="Refreshing…";
+  try{
+    const payload={player:c.player,team:c.team,sport:c.sport,year:c.year,set:c.set,cardNumber:c.number,parallel:c.parallel,serialNumber:c.serial,grade:c.grade};
+    const res=await fetch("/api/price",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const d=await res.json().catch(()=>({}));
+    if(res.status===429){toast("Live pricing is cooling down. Try again later.");return}
+    if(!res.ok)throw new Error(d.error||"Pricing failed");
+    const next={...c,value:Number(d.value||c.value),priceLow:Number(d.low||0),priceHigh:Number(d.high||0),priceConfidence:d.confidence||"Low",
+      priceSource:d.source||"Live AI market estimate",priceNote:d.note||"",priceSources:d.sources||[],priceUpdatedAt:Date.now()};
+    next.priceHistory=pushPriceHistory(c,next.value,next.priceSource);
+    await persistCard(next);openDetails(c.id);toast("Value refreshed");
+  }catch(e){console.error(e);toast("Live refresh unavailable")}
+  finally{btn.disabled=false;btn.textContent="Live refresh"}
 });
 $("deleteCardBtn").addEventListener("click",async()=>{
   const c=cards.find(x=>x.id===currentDetailId);if(!c)return;
@@ -628,12 +796,21 @@ $("analyzeBtn").addEventListener("click",async()=>{
   const timer=setTimeout(()=>analyzeController?.abort(),50000);
   $("analyzeBtn").disabled=true;$("analyzeLabel").textContent="Analyzing…";
   $("analysisState").classList.remove("hidden");$("analysisSpinner").classList.remove("ready");
-  $("analysisTitle").textContent="Analyzing both sides…";$("analysisSub").textContent="Reading names, card number, set details, parallels and serial clues.";
+  $("analysisTitle").textContent="Analyzing both sides…";$("analysisSub").textContent="Identifying the card and estimating value in one AI request.";
+
   try{
-    const res=await fetch("/api/identify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({front:frontData,back:backData}),signal:analyzeController.signal});
-    const data=await res.json();
-    if(!res.ok)throw new Error(data.error||"Could not identify this card.");
-    aiResult=data;scans+=1;localStorage.setItem(SCAN_KEY,String(scans));renderAll();renderMatches(data);go("matches");
+    const key=await stableImageKey();
+    let data=readIdentifyCache(key);
+    if(data){
+      $("analysisSub").textContent="Loaded a recent result without spending another AI request.";
+    }else{
+      const res=await fetch("/api/identify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({front:frontData,back:backData}),signal:analyzeController.signal});
+      data=await res.json();
+      if(!res.ok)throw new Error(data.error||"Could not identify this card.");
+      writeIdentifyCache(key,data);
+      scans+=1;localStorage.setItem(SCAN_KEY,String(scans));
+    }
+    aiResult=data;renderAll();renderMatches(data);go("matches");
   }catch(err){
     const message=err.name==="AbortError"?"The scan took too long. Try again.":err.message;
     $("analysisTitle").textContent="Scan couldn't finish";$("analysisSub").textContent=message;toast(message);
@@ -641,7 +818,6 @@ $("analyzeBtn").addEventListener("click",async()=>{
     clearTimeout(timer);analyzeController=null;$("analyzeBtn").disabled=!(frontData&&backData);$("analyzeLabel").textContent="Identify card";
   }
 });
-
 function descriptor(m){return [m.year,m.manufacturer,m.set,m.cardNumber?`#${m.cardNumber}`:"",m.parallel].filter(Boolean).join(" • ")}
 function matchCard(m,primary=false){
   const el=document.createElement("article");el.className="match-card";
@@ -671,15 +847,21 @@ function renderMatches(data){
 }
 function selectMatch(m){
   selectedMatch=m;
-  $("confirmFront").src=frontData;
-  $("confirmConfidence").textContent=`${Math.round(m.confidence||0)}% AI match`;
-  $("confirmName").textContent=m.player||"Unknown card";
-  $("confirmDescriptor").textContent=descriptor(m);
+  $("confirmFront").src=frontData;$("confirmConfidence").textContent=`${Math.round(m.confidence||0)}% AI match`;
+  $("confirmName").textContent=m.player||"Unknown card";$("confirmDescriptor").textContent=descriptor(m);
   $("fPlayer").value=m.player||"";$("fTeam").value=m.team||"";$("fSport").value=m.sport||"Other";$("fYear").value=m.year||"";
   $("fSet").value=[m.manufacturer,m.set].filter(Boolean).join(" ");$("fNumber").value=m.cardNumber||"";$("fParallel").value=m.parallel||"";
-  $("fSerial").value=m.serialNumber||"";$("fGrade").value=m.grade||"Raw";$("fPaid").value="";$("fValue").value="";$("fRookie").checked=Boolean(m.rookie);
-  go("confirm");
-  updateMarketValue();
+  $("fSerial").value=m.serialNumber||"";$("fGrade").value=m.grade||"Raw";$("fPaid").value="";$("fRookie").checked=Boolean(m.rookie);
+
+  const estimate=aiResult?.marketEstimate||{};
+  if(Number.isFinite(Number(estimate.value)) && Number(estimate.value)>=0){
+    $("fValue").value=Number(estimate.value).toFixed(2);
+    pricingState={status:"ready",value:Number(estimate.value),low:Number(estimate.low||estimate.value),high:Number(estimate.high||estimate.value),
+      confidence:estimate.confidence||"Low",comps:0,source:"Scan AI estimate",sources:[],note:estimate.note||"Approximate value included with identification.",updatedAt:0};
+  }else{
+    $("fValue").value="";pricingState={status:"idle",value:null,low:null,high:null,confidence:null,comps:0,source:"pending"};
+  }
+  renderPricing();go("confirm");
 }
 
 $("addVaultBtn").addEventListener("click",async()=>{
@@ -691,7 +873,12 @@ $("addVaultBtn").addEventListener("click",async()=>{
     player:$("fPlayer").value.trim()||"Unknown card",team:$("fTeam").value.trim(),sport:$("fSport").value,
     year:$("fYear").value.trim(),set:$("fSet").value.trim(),number:$("fNumber").value.trim(),parallel:$("fParallel").value.trim(),
     serial:$("fSerial").value.trim(),grade:$("fGrade").value.trim()||"Raw",paid:Number($("fPaid").value||0),value:Number($("fValue").value||0),
-    rookie:$("fRookie").checked,aiConfidence:Number(selectedMatch.confidence||0),createdAt:Date.now()
+    rookie:$("fRookie").checked,aiConfidence:Number(selectedMatch.confidence||0),
+    priceSource:pricingState.source||"Scan AI estimate",priceConfidence:pricingState.confidence||"",
+    priceLow:Number(pricingState.low||0),priceHigh:Number(pricingState.high||0),priceNote:pricingState.note||"",
+    priceUpdatedAt:pricingState.updatedAt||Date.now(),priceSources:pricingState.sources||[],
+    priceHistory:pushPriceHistory({priceHistory:[]},Number($("fValue").value||0),pricingState.source||"Scan AI estimate"),
+    createdAt:Date.now()
   });
   try{
     await persistCard(card);
@@ -708,7 +895,7 @@ $("addVaultBtn").addEventListener("click",async()=>{
     $("analysisSub").textContent=message;
 
     toast(`Save failed: ${code}`);
-    setTimeout(()=>alert(`CARD VAULT v1.0.7 SAVE ERROR
+    setTimeout(()=>alert(`CARD VAULT v1.4.0 SAVE ERROR
 
 Code: ${code}
 
