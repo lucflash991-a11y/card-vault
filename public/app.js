@@ -453,23 +453,70 @@ function renderValueChart(){
   const svg=$("valueChart");if(!svg)return;
   let hist=portfolioHistory().slice(-30);
   const current=cards.reduce((s,c)=>s+Number(c.value||0),0);
-  if(!hist.length)hist=[{value:current,at:Date.now()}];
+
+  if(!hist.length)hist=[{value:current,at:Date.now(),day:new Date().toISOString().slice(0,10)}];
+
   const values=hist.map(x=>Number(x.value||0));
-  const max=Math.max(...values,1),min=Math.min(...values,0);
+  const max=Math.max(...values,1);
+  const min=Math.min(...values,0);
   const range=Math.max(1,max-min);
+
   const points=values.map((v,i)=>{
-    const x=values.length===1?160:(i/(values.length-1))*314+3;
-    const y=100-((v-min)/range)*84;
+    const x=values.length===1?160:(i/(values.length-1))*312+4;
+    const y=112-((v-min)/range)*88;
     return [x,y];
   });
+
   const line=points.map(p=>p.join(",")).join(" ");
-  const fill=`3,105 ${line} 317,105`;
-  svg.innerHTML=`<line class="chart-grid-line" x1="0" x2="320" y1="25" y2="25"/><line class="chart-grid-line" x1="0" x2="320" y1="65" y2="65"/><polygon class="chart-fill" points="${fill}"/><polyline class="chart-line" points="${line}"/>`;
-  if(points.length)$("valueChart").insertAdjacentHTML("beforeend",`<circle class="chart-dot" cx="${points.at(-1)[0]}" cy="${points.at(-1)[1]}" r="4"/>`);
-  const first=values[0]||0,last=values.at(-1)||0,delta=last-first;
-  $("chartStart").textContent=money(first);$("chartEnd").textContent=money(last);
-  $("chartChange").textContent=values.length<2?"Tracking starts now":`${delta>=0?"+":""}${money(delta)} over ${values.length} day${values.length===1?"":"s"}`;
-  $("chartChange").style.color=delta<0?"var(--danger)":"var(--good)";
+  const fill=`4,120 ${line} 316,120`;
+
+  svg.innerHTML=`
+    <defs>
+      <linearGradient id="vaultFill" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="var(--accent)" stop-opacity=".30"/>
+        <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <line class="chart-grid-line" x1="0" x2="320" y1="26" y2="26"/>
+    <line class="chart-grid-line" x1="0" x2="320" y1="68" y2="68"/>
+    <line class="chart-grid-line" x1="0" x2="320" y1="110" y2="110"/>
+    <polygon points="${fill}" fill="url(#vaultFill)"/>
+    <polyline class="chart-line" points="${line}"/>
+  `;
+
+  if(points.length){
+    const lastPoint=points.at(-1);
+    svg.insertAdjacentHTML("beforeend",`
+      <circle cx="${lastPoint[0]}" cy="${lastPoint[1]}" r="7" fill="var(--surface)" stroke="var(--accent)" stroke-width="3"/>
+      <circle cx="${lastPoint[0]}" cy="${lastPoint[1]}" r="2.5" fill="var(--accent)"/>
+    `);
+  }
+
+  const first=values[0]||0;
+  const last=values.at(-1)||0;
+  const delta=last-first;
+  const pct=first>0 ? (delta/first)*100 : 0;
+
+  $("historyCurrentValue").textContent=money(last);
+  $("chartStart").textContent=money(first);
+  $("chartEnd").textContent=money(last);
+  $("chartChange").textContent=`${delta>=0?"+":""}${money(delta)}`;
+  $("chartChange").style.color=delta<0?"var(--danger)":delta>0?"var(--good)":"var(--muted)";
+
+  const pill=$("historyChangePill");
+  pill.className="history-change "+(delta>0?"positive":delta<0?"negative":"neutral");
+  if(values.length<2){
+    pill.textContent="Tracking starts now";
+  }else{
+    pill.textContent=`${delta>=0?"▲":"▼"} ${Math.abs(pct).toFixed(1)}% • ${delta>=0?"+":""}${money(delta)}`;
+  }
+
+  const startDate=hist[0]?.day ? new Date(hist[0].day+"T12:00:00") : new Date(hist[0]?.at||Date.now());
+  const endDate=hist.at(-1)?.day ? new Date(hist.at(-1).day+"T12:00:00") : new Date(hist.at(-1)?.at||Date.now());
+
+  const dateFmt=new Intl.DateTimeFormat("en-US",{month:"short",day:"numeric"});
+  $("historyStartLabel").textContent=dateFmt.format(startDate);
+  $("historyEndLabel").textContent=values.length>1?dateFmt.format(endDate):"Today";
 }
 function renderSportBreakdown(){
   const wrap=$("sportBreakdown");if(!wrap)return;

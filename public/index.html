@@ -76,13 +76,30 @@
           <div><span>Avg card</span><strong id="dashAverage">$0</strong></div>
         </section>
 
-        <section class="dashboard-panel">
-          <div class="dashboard-head">
-            <div><small>PORTFOLIO</small><h2>Collection trend</h2></div>
-            <span id="trendPeriod">30D</span>
+        <section class="vault-history-card">
+          <div class="vault-history-top">
+            <div>
+              <small>VAULT VALUE HISTORY</small>
+              <strong id="historyCurrentValue">$0</strong>
+              <div id="historyChangePill" class="history-change neutral">No history yet</div>
+            </div>
+            <button id="historyRangeBtn" class="history-range" type="button">30D</button>
           </div>
-          <svg id="valueChart" class="value-chart" viewBox="0 0 320 110" preserveAspectRatio="none" aria-label="Collection value history"></svg>
-          <div class="chart-foot"><span id="chartStart">$0</span><span id="chartChange">No history yet</span><span id="chartEnd">$0</span></div>
+
+          <div class="history-chart-wrap">
+            <svg id="valueChart" class="value-chart premium-chart" viewBox="0 0 320 130" preserveAspectRatio="none" aria-label="Vault value history"></svg>
+          </div>
+
+          <div class="history-axis">
+            <span id="historyStartLabel">Start</span>
+            <span id="historyEndLabel">Today</span>
+          </div>
+
+          <div class="history-summary">
+            <div><span>Start value</span><b id="chartStart">$0</b></div>
+            <div><span>Current value</span><b id="chartEnd">$0</b></div>
+            <div><span>Change</span><b id="chartChange">$0</b></div>
+          </div>
         </section>
 
         <section class="dashboard-panel">
@@ -370,7 +387,7 @@
         </div>
 
         <p class="settings-footnote">When signed in, Card Vault can sync your vault through Firebase. Guest mode stays on this device.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.4.0</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.4.1</p>
       </section>
     </main>
 
@@ -384,6 +401,6 @@
 
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=140"></script>
+  <script type="module" src="/app.js?v=141"></script>
 </body>
 </html>

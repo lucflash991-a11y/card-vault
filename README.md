@@ -1,4 +1,4 @@
-# Card Vault v1.4.0 — Mega Update
+# Card Vault v1.4.1
 
 Major rebuild of the Card Vault PWA.
 
@@ -206,3 +206,14 @@ This combines the planned v1.2.1, v1.3, and v1.4 work.
 - Delete card
 
 Cross-device cloud thumbnails, Google accounts, Firestore sync, dark mode, and the existing scan/save fixes remain intact.
+
+
+## v1.4.1 — Vault Value History redesign
+- Renamed the old Collection Trend section to Vault Value History.
+- Larger current vault value.
+- Clear percentage + dollar change pill.
+- Cleaner gradient-filled chart.
+- Stronger current-value marker.
+- Start and end date labels.
+- Separate Start Value / Current Value / Change summary row.
+- Better dark-mode presentation.

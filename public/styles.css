@@ -265,3 +265,113 @@ html[data-theme="dark"] .favorite-action.active{background:#2d2816}
   .analytics-strip strong{font-size:12px}
   .sport-row{grid-template-columns:68px 1fr auto}
 }
+
+
+/* v1.4.1 — premium Vault Value History */
+.vault-history-card{
+  margin-top:10px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:26px;
+  padding:17px;
+  box-shadow:var(--shadow-soft);
+  overflow:hidden;
+}
+.vault-history-top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:14px;
+}
+.vault-history-top small{
+  display:block;
+  font-size:8px;
+  letter-spacing:.16em;
+  color:var(--muted);
+  font-weight:900;
+}
+.vault-history-top strong{
+  display:block;
+  font-size:30px;
+  letter-spacing:-.055em;
+  margin-top:5px;
+}
+.history-change{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  margin-top:8px;
+  border-radius:999px;
+  padding:6px 9px;
+  font-size:9px;
+  font-weight:850;
+}
+.history-change.positive{background:var(--good-bg);color:var(--good)}
+.history-change.negative{background:var(--danger-bg);color:var(--danger)}
+.history-change.neutral{background:var(--surface-2);color:var(--muted)}
+.history-range{
+  border:1px solid var(--line);
+  background:var(--surface-2);
+  color:var(--ink);
+  border-radius:999px;
+  padding:8px 10px;
+  font-size:9px;
+  font-weight:850;
+}
+.history-chart-wrap{
+  position:relative;
+  margin-top:14px;
+  margin-left:-6px;
+  margin-right:-6px;
+}
+.premium-chart{
+  height:130px;
+  margin-top:0;
+}
+.premium-chart .chart-grid-line{
+  stroke:var(--line);
+  stroke-width:1;
+  stroke-dasharray:2 5;
+}
+.premium-chart .chart-line{
+  stroke-width:3.25;
+}
+.premium-chart .chart-fill{
+  opacity:.9;
+}
+.history-axis{
+  display:flex;
+  justify-content:space-between;
+  color:var(--muted);
+  font-size:8px;
+  margin-top:0;
+}
+.history-summary{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:8px;
+  margin-top:13px;
+  padding-top:13px;
+  border-top:1px solid var(--line);
+}
+.history-summary div{
+  min-width:0;
+}
+.history-summary span,
+.history-summary b{
+  display:block;
+}
+.history-summary span{
+  font-size:8px;
+  color:var(--muted);
+}
+.history-summary b{
+  font-size:12px;
+  margin-top:4px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+html[data-theme="dark"] .vault-history-card{
+  background:linear-gradient(180deg,var(--surface),color-mix(in srgb,var(--surface) 88%,#111522));
+}
