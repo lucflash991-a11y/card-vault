@@ -41,6 +41,38 @@ let aiResult = null;
 let activeScanId = null;
 let savingCard = false;
 let pricingState={status:"idle",value:null,low:null,high:null,confidence:null,comps:0,source:"pending"};
+const PRICE_CACHE_PREFIX="cardvault.price.v119.";
+const PRICE_CACHE_TTL=12*60*60*1000; // 12 hours
+
+function priceFingerprint(){
+  return [
+    $("fPlayer")?.value||"",
+    $("fYear")?.value||"",
+    $("fSet")?.value||"",
+    $("fNumber")?.value||"",
+    $("fParallel")?.value||"",
+    $("fSerial")?.value||"",
+    $("fGrade")?.value||""
+  ].map(v=>String(v).trim().toLowerCase()).join("|");
+}
+
+function readPriceCache(){
+  try{
+    const key=priceFingerprint();
+    if(!key.replace(/\|/g,""))return null;
+    const parsed=JSON.parse(localStorage.getItem(PRICE_CACHE_PREFIX+key)||"null");
+    if(!parsed || !parsed.savedAt || Date.now()-parsed.savedAt>PRICE_CACHE_TTL)return null;
+    return parsed.data||null;
+  }catch{return null}
+}
+
+function writePriceCache(data){
+  try{
+    const key=priceFingerprint();
+    if(!key.replace(/\|/g,""))return;
+    localStorage.setItem(PRICE_CACHE_PREFIX+key,JSON.stringify({savedAt:Date.now(),data}));
+  }catch(err){console.warn("Price cache failed:",err)}
+}
 function renderPricing(){
   const v=$("marketValue"),m=$("priceMeta"),r=$("priceRange"),c=$("priceConfidence"),b=$("updateValueBtn"),sources=$("priceSources");
   if(!v)return;
@@ -65,20 +97,69 @@ function renderPricing(){
   r.classList.add("hidden");c.classList.add("hidden");
 }
 
-async function updateMarketValue(){
+async function updateMarketValue(force=false){
   if(!selectedMatch)return toast("Identify a card first");
-  pricingState={...pricingState,status:"loading"};renderPricing();
+
+  if(!force){
+    const cached=readPriceCache();
+    if(cached){
+      pricingState={...cached,status:"ready"};
+      $("fValue").value=Number(cached.value).toFixed(2);
+      renderPricing();
+      return;
+    }
+  }
+
+  pricingState={...pricingState,status:"loading"};
+  renderPricing();
+
   try{
-    const payload={player:$("fPlayer").value.trim(),team:$("fTeam").value.trim(),sport:$("fSport").value,year:$("fYear").value.trim(),set:$("fSet").value.trim(),cardNumber:$("fNumber").value.trim(),parallel:$("fParallel").value.trim(),serialNumber:$("fSerial").value.trim(),grade:$("fGrade").value.trim()};
-    const res=await fetch("/api/price",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const payload={
+      player:$("fPlayer").value.trim(),
+      team:$("fTeam").value.trim(),
+      sport:$("fSport").value,
+      year:$("fYear").value.trim(),
+      set:$("fSet").value.trim(),
+      cardNumber:$("fNumber").value.trim(),
+      parallel:$("fParallel").value.trim(),
+      serialNumber:$("fSerial").value.trim(),
+      grade:$("fGrade").value.trim()
+    };
+
+    const res=await fetch("/api/price",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
     const d=await res.json().catch(()=>({}));
     if(!res.ok)throw new Error(d.error||`Pricing request failed (${res.status})`);
-    pricingState={status:"ready",value:d.value,low:d.low,high:d.high,confidence:d.confidence||"Medium",comps:d.sources?.length||d.comps||0,source:d.source||"AI web estimate",sources:d.sources||[],note:d.note||""};
-    $("fValue").value=Number(d.value).toFixed(2);
-    renderPricing();
-  }catch(e){console.error("Pricing error:",e);pricingState={...pricingState,status:"unavailable",value:null};renderPricing();toast("AI market estimate unavailable right now.")}
-}
 
+    pricingState={
+      status:"ready",
+      value:d.value,
+      low:d.low,
+      high:d.high,
+      confidence:d.confidence||"Medium",
+      comps:d.sources?.length||d.comps||0,
+      source:d.source||"AI web estimate",
+      sources:d.sources||[],
+      note:d.note||""
+    };
+
+    $("fValue").value=Number(d.value).toFixed(2);
+    writePriceCache(pricingState);
+    renderPricing();
+
+    if(d.fallbackUsed){
+      toast("Free-tier limit hit — using limited-data AI estimate.");
+    }
+  }catch(e){
+    console.error("Pricing error:",e);
+    pricingState={...pricingState,status:"unavailable",value:null};
+    renderPricing();
+    toast("AI market estimate unavailable right now.");
+  }
+}
 let analyzeController = null;
 let firebase = null;
 let authMode = "guest";
@@ -703,7 +784,7 @@ async function providerSignIn(provider, providerName="google"){
     setLoginBusy(false,providerName);
   }
 }
-$("updateValueBtn")?.addEventListener("click",updateMarketValue);
+$("updateValueBtn")?.addEventListener("click",()=>updateMarketValue(true));
 renderPricing();
 
 $("googleSignIn").addEventListener("click",()=>{

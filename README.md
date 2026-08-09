@@ -1,4 +1,4 @@
-# Card Vault v1.1.8
+# Card Vault v1.1.9
 
 Major rebuild of the Card Vault PWA.
 
@@ -140,3 +140,13 @@ Automatic pricing UI and backend contract are ready. It intentionally shows eBay
 
 ## v1.1.8 AI Web Market Estimate
 Gemini now uses Google Search grounding to research the exact card on the live web and return an AI market estimate, estimated range, confidence, and up to five clickable source links. This is labeled as an AI estimate, not an official eBay sold average.
+
+
+## v1.1.9 Free-Tier Pricing Fallback
+- Live Google Search-grounded pricing remains the first choice.
+- If Search grounding returns HTTP 429, Card Vault automatically retries with a lighter Gemini request without web grounding.
+- Fallback results are clearly labeled `AI estimate • limited data`.
+- Fallback confidence is capped at Medium and normally Low.
+- Price estimates are cached on-device for 12 hours per exact card identity so rescans do not repeatedly burn free API requests.
+- Automatic pricing uses the cache; the `Update Value` button forces one fresh attempt.
+- No billing is required by Card Vault itself.
