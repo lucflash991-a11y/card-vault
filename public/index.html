@@ -229,7 +229,7 @@
           <div class="form-line"><label for="fSerial">Serial #</label><input id="fSerial" placeholder="—"></div>
           <div class="form-line"><label for="fGrade">Grade</label><input id="fGrade" placeholder="Raw"></div>
           <div class="form-line money-line"><label for="fPaid">Paid</label><input id="fPaid" inputmode="decimal" placeholder="$0"></div>
-          <div class="form-line money-line"><label for="fValue">Est. value</label><input id="fValue" inputmode="decimal" placeholder="$0"></div>
+          <div class="form-line money-line"><label for="fValue">Est. value</label><input id="fValue" inputmode="decimal" placeholder="$0"></div><div class="price-intel"><div class="price-intel-head"><div><span class="price-kicker">AI MARKET ESTIMATE</span><strong id="marketValue">Not priced yet</strong></div><button id="updateValueBtn" class="price-update" type="button">Update Value</button></div><div id="priceMeta" class="price-meta">Waiting for eBay marketplace connection</div><div id="priceRange" class="price-meta hidden"></div><div id="priceConfidence" class="price-meta hidden"></div><div id="priceSources" class="price-sources hidden"></div></div>
           <label class="toggle-line">
             <input id="fRookie" type="checkbox">
             <span class="toggle-control"></span>
@@ -317,7 +317,7 @@
         </div>
 
         <p class="settings-footnote">When signed in, Card Vault can sync your vault through Firebase. Guest mode stays on this device.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.0.7</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v1.1.8</p>
       </section>
     </main>
 
@@ -331,6 +331,6 @@
 
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=107"></script>
+  <script type="module" src="/app.js?v=118"></script>
 </body>
 </html>

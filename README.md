@@ -1,4 +1,4 @@
-# Card Vault v1.0.7
+# Card Vault v1.1.8
 
 Major rebuild of the Card Vault PWA.
 
@@ -132,3 +132,11 @@ Apple sign-in cannot simply be activated by frontend code. Apple requires the we
 - Profile visibly shows `BUILD v1.0.7`.
 - Save failures show a `CARD VAULT v1.0.7 SAVE ERROR` alert with the exact Firebase code/message.
 - `/api/version` returns the live server build number.
+
+
+## v1.1.7 Market Intelligence
+Automatic pricing UI and backend contract are ready. It intentionally shows eBay approval pending instead of fabricating prices.
+
+
+## v1.1.8 AI Web Market Estimate
+Gemini now uses Google Search grounding to research the exact card on the live web and return an AI market estimate, estimated range, confidence, and up to five clickable source links. This is labeled as an AI estimate, not an official eBay sold average.

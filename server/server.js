@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"1.0.7"});
+  res.json({version:"1.1.8"});
 });
 
 app.use((req,res,next)=>{
@@ -130,6 +130,36 @@ function getFirebaseConfig(){
   if(!raw)return null;
   try{return JSON.parse(raw)}catch{return null}
 }
+
+app.post("/api/price",async(req,res)=>{
+  try{
+    const {player="",team="",sport="",year="",set="",cardNumber="",parallel="",serialNumber="",grade=""}=req.body||{};
+    if(!player&&!set)return res.status(400).json({error:"Missing card identity"});
+    if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"AI market search is not configured."});
+
+    const model=process.env.GEMINI_MODEL||"gemini-3-flash-preview";
+    const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const exactCard=[year,set,player,cardNumber?`#${cardNumber}`:"",parallel,serialNumber,grade].filter(Boolean).join(" ");
+    const prompt=`You are the market-pricing engine for Card Vault, a sports trading-card collection app.\n\nCard to price:\nPlayer: ${player}\nTeam: ${team}\nSport: ${sport}\nYear: ${year}\nSet: ${set}\nCard number: ${cardNumber}\nParallel/variation: ${parallel}\nSerial number: ${serialNumber}\nGrade/condition: ${grade}\n\nSearch the live web for THIS EXACT CARD or the closest legitimate comparables. Prefer eBay evidence when it appears in search, then other reputable card-market sources. Match year, set, card number, parallel, serial numbering, and grade closely. Do not mix raw and graded copies unless unavoidable. Ignore unrelated cards, lots, different parallels, reprints, packs, and extreme outliers. Asking prices are not sold prices, so discount confidence if only asking prices are available. Never invent sales or prices. Produce a conservative fair-market estimate in USD.\n\nReturn ONLY JSON in this shape:\n{"value":18.50,"low":14.00,"high":23.00,"confidence":"High|Medium|Low","note":"short basis for estimate","comparablesUsed":5}\n\nExact-card search phrase: ${exactCard}`;
+
+    const response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt}]}],tools:[{google_search:{}}],generationConfig:{temperature:0.2}})});
+    const data=await response.json();
+    if(!response.ok){console.error("Gemini pricing error:",response.status,data);if(response.status===429)return res.status(429).json({error:"AI market-search limit reached. Try again later."});return res.status(502).json({error:"AI market search could not run."})}
+
+    const candidate=data?.candidates?.[0];
+    let text=candidate?.content?.parts?.map(p=>p.text||"").join("")||"";
+    text=text.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();
+    const jsonMatch=text.match(/\{[\s\S]*\}/);
+    if(!jsonMatch)return res.status(502).json({error:"AI market estimate returned an unreadable result."});
+    const parsed=JSON.parse(jsonMatch[0]);
+    const value=Number(parsed.value),low=Number(parsed.low),high=Number(parsed.high);
+    if(!Number.isFinite(value)||!Number.isFinite(low)||!Number.isFinite(high)||value<0||low<0||high<0)return res.status(502).json({error:"AI market estimate returned invalid pricing."});
+
+    const chunks=candidate?.groundingMetadata?.groundingChunks||[];const sources=[];const seen=new Set();
+    for(const chunk of chunks){const web=chunk?.web;if(!web?.uri||seen.has(web.uri))continue;seen.add(web.uri);sources.push({title:web.title||"Web source",url:web.uri});if(sources.length>=5)break}
+    res.json({value:Math.round(value*100)/100,low:Math.round(Math.min(low,high)*100)/100,high:Math.round(Math.max(low,high)*100)/100,confidence:["High","Medium","Low"].includes(parsed.confidence)?parsed.confidence:"Low",note:String(parsed.note||"AI estimate based on current web comparables.").slice(0,220),comps:Number(parsed.comparablesUsed||sources.length||0),source:"AI web estimate",sources});
+  }catch(e){console.error("Price endpoint error:",e);res.status(500).json({error:"AI market-pricing engine failed."})}
+});
 
 app.get("/api/config",(req,res)=>{
   res.setHeader("Cache-Control","no-store");

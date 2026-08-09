@@ -200,3 +200,7 @@ html[data-theme="dark"] .portfolio-stats{border-top-color:rgba(17,19,24,.12)}
   .featured-card{grid-template-columns:80px 1fr auto}
   .featured-card img{width:80px;height:112px}
 }
+
+.price-intel{margin-top:12px;padding:14px;border:1px solid var(--line);border-radius:18px;background:var(--panel)}.price-intel-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.price-intel-head strong{display:block;font-size:1.35rem;margin-top:4px}.price-kicker{font-size:.67rem;font-weight:900;letter-spacing:.12em;color:var(--muted)}.price-update{border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-weight:800;border-radius:12px;padding:9px 11px}.price-update:disabled{opacity:.55}.price-meta{margin-top:8px;color:var(--muted);font-size:.78rem}
+
+.price-sources{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap}.price-source-link{display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--panel-2);color:var(--text);text-decoration:none;border-radius:999px;padding:7px 9px;font-size:.72rem;font-weight:750}
