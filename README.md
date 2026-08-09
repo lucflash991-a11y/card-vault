@@ -1,4 +1,4 @@
-# Card Vault v1.0
+# Card Vault v1.0.2
 
 Major rebuild of the Card Vault PWA.
 
@@ -70,3 +70,22 @@ Add `FIREBASE_WEB_CONFIG` when Firebase is ready.
 
 ## Important
 Apple sign-in cannot simply be activated by frontend code. Apple requires the web Sign in with Apple developer configuration before the Firebase Apple provider can work.
+
+
+## v1.0.1 Google sign-in hotfix
+- Google login now uses `signInWithPopup()` first instead of redirect-first on iPhone/PWA.
+- Firebase authentication is explicitly persisted with `browserLocalPersistence`.
+- Redirect is retained only as a fallback when the browser blocks popups.
+- Redirect recovery now restores the Firebase user before showing the app.
+- Guest-mode state is cleared immediately after successful Firebase authentication.
+- Login buttons lock while authentication is in progress.
+- Service worker cache bumped so installed iPhone copies receive the fix.
+
+
+## v1.0.2 authentication gate fix
+- Successful Firebase authentication now opens Card Vault immediately.
+- Firestore sync no longer blocks the transition away from the login screen.
+- Cloud sync and theme sync run after the authenticated UI is visible.
+- Firestore permission/network errors now show a sync warning instead of acting like login failed.
+- Firestore live listener starts before guest-card migration.
+- Service worker cache bumped to force the updated authentication code onto installed copies.

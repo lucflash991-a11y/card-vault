@@ -29,6 +29,20 @@ let unsubscribeCards = null;
 let currentThemeChoice = localStorage.getItem(THEME_KEY) || "system";
 let isNavigatingAuth = false;
 
+function setLoginBusy(busy, provider="google"){
+  const google=$("googleSignIn");
+  const apple=$("appleSignIn");
+  const guest=$("guestSignIn");
+  if(google){
+    google.disabled=busy;
+    google.dataset.originalText=google.dataset.originalText||google.innerHTML;
+    if(busy && provider==="google") google.innerHTML='<span class="social-mark google-mark">G</span><span>Signing in…</span>';
+    else if(!busy && google.dataset.originalText) google.innerHTML=google.dataset.originalText;
+  }
+  if(apple) apple.disabled=busy || !firebase?.appleEnabled;
+  if(guest) guest.disabled=busy;
+}
+
 function readLocalCards(){
   let found = [];
   try{ found = JSON.parse(localStorage.getItem(CARD_KEY) || "[]"); }catch{}
@@ -473,16 +487,30 @@ async function initFirebase(){
     const fsMod=await import("https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js");
     const app=appMod.initializeApp(config.firebaseConfig);
     const auth=authMod.getAuth(app);
+    await authMod.setPersistence(auth, authMod.browserLocalPersistence);
     const db=fsMod.getFirestore(app);
     firebase={...authMod,...fsMod,auth,db,appleEnabled:Boolean(config.appleAuthEnabled)};
     $("appleSignIn").disabled=!firebase.appleEnabled;
     if(!firebase.appleEnabled)$("appleSignIn").title="Apple provider is not configured yet.";
 
-    try{ await authMod.getRedirectResult(auth); }catch(err){toast(authErrorText(err))}
+    try{
+      const redirectResult=await authMod.getRedirectResult(auth);
+      if(redirectResult?.user){
+        currentUser=redirectResult.user;
+        localStorage.removeItem(GUEST_KEY);
+        sessionStorage.removeItem("cardvault.pendingAuth");
+      }
+    }catch(err){
+      sessionStorage.removeItem("cardvault.pendingAuth");
+      toast(authErrorText(err));
+    }
+
     authMod.onAuthStateChanged(auth,async user=>{
       currentUser=user||null;
       if(user){
-        authMode="firebase";localStorage.removeItem(GUEST_KEY);
+        authMode="firebase";
+        localStorage.removeItem(GUEST_KEY);
+        sessionStorage.removeItem("cardvault.pendingAuth");
         await loadUserTheme();
         await startCloudCards();
         showApp();
@@ -507,23 +535,57 @@ function authErrorText(err){
   if(code.includes("popup-closed"))return "Sign-in was closed.";
   return "Sign-in couldn't finish. Check your Firebase provider setup.";
 }
-async function providerSignIn(provider){
+async function providerSignIn(provider, providerName="google"){
   if(!firebase?.auth || isNavigatingAuth)return;
   isNavigatingAuth=true;
+  setLoginBusy(true,providerName);
+
   try{
-    const standalone=matchMedia("(display-mode: standalone)").matches || navigator.standalone===true;
-    const mobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if(standalone||mobile) await firebase.signInWithRedirect(firebase.auth,provider);
-    else await firebase.signInWithPopup(firebase.auth,provider);
-  }catch(err){toast(authErrorText(err));isNavigatingAuth=false}
+    // Popup-first fixes the Safari/PWA redirect loop that can return users to
+    // Card Vault without restoring the Firebase session.
+    const result=await firebase.signInWithPopup(firebase.auth,provider);
+
+    if(!result?.user){
+      throw new Error("No Firebase user was returned.");
+    }
+
+    currentUser=result.user;
+    authMode="firebase";
+    localStorage.removeItem(GUEST_KEY);
+    await loadUserTheme();
+    await startCloudCards();
+    showApp();
+    renderProfile();
+    toast(`Signed in as ${accountName()}`);
+  }catch(err){
+    const code=String(err?.code||"");
+
+    // Only fall back to redirect when the browser explicitly blocks popups.
+    if(code.includes("popup-blocked")){
+      try{
+        sessionStorage.setItem("cardvault.pendingAuth","1");
+        await firebase.signInWithRedirect(firebase.auth,provider);
+        return;
+      }catch(redirectErr){
+        toast(authErrorText(redirectErr));
+      }
+    }else if(!code.includes("popup-closed-by-user") && !code.includes("cancelled-popup-request")){
+      console.error("Card Vault sign-in error:",err);
+      toast(authErrorText(err));
+    }
+  }finally{
+    // Redirect navigation will leave the page before this matters.
+    isNavigatingAuth=false;
+    setLoginBusy(false,providerName);
+  }
 }
 $("googleSignIn").addEventListener("click",()=>{
   if(!firebase)return;
-  providerSignIn(new firebase.GoogleAuthProvider());
+  providerSignIn(new firebase.GoogleAuthProvider(),"google");
 });
 $("appleSignIn").addEventListener("click",()=>{
   if(!firebase?.appleEnabled){toast("Apple sign-in needs Apple Developer setup first.");return}
-  const p=new firebase.OAuthProvider("apple.com");p.addScope("email");p.addScope("name");providerSignIn(p);
+  const p=new firebase.OAuthProvider("apple.com");p.addScope("email");p.addScope("name");providerSignIn(p,"apple");
 });
 $("guestSignIn").addEventListener("click",()=>{
   localStorage.setItem(GUEST_KEY,"1");authMode="guest";currentUser=null;cards=readLocalCards();showApp();
