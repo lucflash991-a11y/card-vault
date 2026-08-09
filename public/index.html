@@ -432,32 +432,96 @@
       <section id="discover" class="screen">
         <header class="page-header">
           <button class="back-circle" data-go="home" type="button">‹</button>
-          <div><small>CARD VAULT PLATFORM</small><h1>Discover</h1></div>
+          <div><small>CARD VAULT SOCIAL</small><h1>Discover</h1></div>
           <div class="header-spacer"></div>
         </header>
-
-        <section class="discover-intro">
-          <small>COMMUNITY</small>
-          <h2>Collectors, not clutter.</h2>
-          <p>Discover is separate from Home, so your dashboard stays focused on your own collection.</p>
-        </section>
 
         <label class="search-box discover-search">
           <span>⌕</span>
           <input id="discoverSearch" type="search" placeholder="Search collectors, players, sets">
         </label>
 
-        <section class="discover-section">
-          <div class="settings-title"><div><small>COLLECTORS</small><h2>Public profiles</h2></div></div>
-          <div id="discoverProfiles" class="discover-profile-list"></div>
-          <p id="discoverProfilesEmpty" class="muted-copy">No public collectors found yet.</p>
-        </section>
+        <div class="discover-tabs" role="tablist" aria-label="Discover sections">
+          <button class="discover-tab active" data-discover-tab="for-you" type="button">For You</button>
+          <button class="discover-tab" data-discover-tab="following" type="button">Following</button>
+          <button class="discover-tab" data-discover-tab="cards" type="button">Cards</button>
+          <button class="discover-tab" data-discover-tab="collectors" type="button">Collectors</button>
+        </div>
 
-        <section class="discover-section">
-          <div class="settings-title"><div><small>SHARED CARDS</small><h2>Recently shared</h2></div></div>
-          <div id="discoverCards" class="discover-card-grid"></div>
-          <p id="discoverCardsEmpty" class="muted-copy">No public cards found yet.</p>
-        </section>
+        <div id="discoverForYou" class="discover-panel">
+          <section class="discover-hero-v21">
+            <div>
+              <small>YOUR COMMUNITY</small>
+              <h2>Find something worth collecting.</h2>
+              <p>Collectors, cards and collections matched to what you already keep in your Vault.</p>
+            </div>
+          </section>
+
+          <section class="discover-section">
+            <div class="settings-title">
+              <div><small>FOR YOU</small><h2>Suggested collectors</h2></div>
+              <button class="text-button" data-switch-discover="collectors" type="button">See all</button>
+            </div>
+            <div id="suggestedCollectors" class="suggested-collector-row"></div>
+            <p id="suggestedCollectorsEmpty" class="muted-copy">Public collectors will appear here as Card Vault grows.</p>
+          </section>
+
+          <section class="discover-section">
+            <div class="settings-title">
+              <div><small>POPULAR</small><h2>Trending cards</h2></div>
+              <button class="text-button" data-switch-discover="cards" type="button">See all</button>
+            </div>
+            <div id="trendingCards" class="social-card-grid"></div>
+            <p id="trendingCardsEmpty" class="muted-copy">Like shared cards to start building trends.</p>
+          </section>
+
+          <section class="discover-section">
+            <div class="settings-title"><div><small>COLLECTIONS</small><h2>Featured collections</h2></div></div>
+            <div id="featuredCollections" class="featured-collection-list"></div>
+            <p id="featuredCollectionsEmpty" class="muted-copy">Shared cards with collection names will appear here.</p>
+          </section>
+
+          <section class="discover-section">
+            <div class="settings-title"><div><small>NEW</small><h2>Recently shared</h2></div></div>
+            <div id="recentSharedCards" class="social-card-grid"></div>
+            <p id="recentSharedEmpty" class="muted-copy">No public cards have been shared yet.</p>
+          </section>
+        </div>
+
+        <div id="discoverFollowing" class="discover-panel hidden">
+          <section class="following-summary">
+            <div><small>FOLLOWING</small><strong id="followingCount">0</strong><span>collectors</span></div>
+            <p>New public cards from collectors you follow show up here.</p>
+          </section>
+          <div id="followingFeed" class="following-feed"></div>
+          <div id="followingFeedEmpty" class="discover-big-empty">
+            <span>◎</span>
+            <h2>Your following feed is empty</h2>
+            <p>Follow collectors from Discover and their shared cards will appear here.</p>
+            <button data-switch-discover="collectors" type="button">Find collectors</button>
+          </div>
+        </div>
+
+        <div id="discoverCardsPanel" class="discover-panel hidden">
+          <div class="discover-panel-head">
+            <div><small>PUBLIC CARDS</small><h2>Cards</h2></div>
+            <select id="discoverCardSort" class="select-control">
+              <option value="trending">Trending</option>
+              <option value="newest">Newest</option>
+              <option value="value">Highest value</option>
+            </select>
+          </div>
+          <div id="allDiscoverCards" class="social-card-grid"></div>
+          <p id="allDiscoverCardsEmpty" class="muted-copy">No cards match your search.</p>
+        </div>
+
+        <div id="discoverCollectorsPanel" class="discover-panel hidden">
+          <div class="discover-panel-head">
+            <div><small>COMMUNITY</small><h2>Collectors</h2></div>
+          </div>
+          <div id="allDiscoverCollectors" class="collector-directory"></div>
+          <p id="allDiscoverCollectorsEmpty" class="muted-copy">No collectors match your search.</p>
+        </div>
       </section>
 
       <section id="publicProfile" class="screen">
@@ -477,6 +541,11 @@
           <div><strong id="publicCardCount">0</strong><span>Cards</span></div>
           <div><strong id="publicVaultValue">$0</strong><span>Value</span></div>
           <div><strong id="publicAchievementCount">0</strong><span>Badges</span></div>
+        </div>
+        <div class="public-social-stats">
+          <div><strong id="publicFollowerCount">0</strong><span>Followers</span></div>
+          <div><strong id="publicFollowingCount">0</strong><span>Following</span></div>
+          <button id="publicFollowBtn" class="follow-primary" type="button">Follow</button>
         </div>
         <section class="profile-platform-section">
           <div class="settings-title"><div><small>SHOWCASE</small><h2>Featured cards</h2></div></div>
@@ -544,7 +613,7 @@
         </div>
 
         <p class="settings-footnote">Platform features live in Discover. Your Home stays personal and clean.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v2.0.2</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v2.1.0</p>
       </section>
     </main>
 
@@ -590,6 +659,6 @@
 
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=202"></script>
+  <script type="module" src="/app.js?v=210"></script>
 </body>
 </html>

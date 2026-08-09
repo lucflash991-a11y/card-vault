@@ -311,6 +311,9 @@ let platformProfile=null,activityLog=[],showcaseIds=[],showcaseDraft=[];
 let publicProfiles=[],publicCards=[],selectedPublicProfile=null,profilePhotoDraft="";
 let unsubscribePublicProfiles=null,unsubscribePublicCards=null;
 let unsubscribeOwnProfile=null;
+let socialFollows=[],socialLikes=[];
+let activeDiscoverTab="for-you";
+let unsubscribeFollows=null,unsubscribeLikes=null;
 
 function setLoginBusy(busy, provider="google"){
   const google=$("googleSignIn");
@@ -578,9 +581,196 @@ function closeShowcase(){
   document.body.classList.remove("modal-open");
 }
 function renderShowcasePicker(){const el=$("showcasePicker");if(!el)return;el.innerHTML="";cards.forEach(c=>{const chosen=showcaseDraft.includes(c.id),b=document.createElement("button");b.type="button";b.className="showcase-option"+(chosen?" selected":"");b.innerHTML=`<img src="${c.front||"/icons/card-placeholder.svg"}" alt=""><span>${esc(c.player)}</span>${chosen?'<i class="showcase-check">✓</i>':""}`;b.onclick=()=>{if(chosen)showcaseDraft=showcaseDraft.filter(id=>id!==c.id);else if(showcaseDraft.length<6)showcaseDraft.push(c.id);else{toast("Showcase is limited to 6 cards");return}renderShowcasePicker()};el.appendChild(b)})}
-function renderDiscover(){const q=($("discoverSearch")?.value||"").toLowerCase().trim(),profiles=publicProfiles.filter(p=>[p.displayName,p.username,p.bio,p.favorite].join(" ").toLowerCase().includes(q));const pe=$("discoverProfiles");if(pe){pe.innerHTML="";profiles.slice(0,20).forEach(p=>{const b=document.createElement("button");b.type="button";b.className="discover-profile";b.innerHTML=`<div class="discover-avatar">${profileAvatarHTML(p,p.displayName)}</div><div><strong>${esc(p.displayName||"Collector")}</strong><p>@${esc(p.username||"collector")} • ${esc(p.favorite||"Sports cards")}</p></div><em>${Number(p.cardCount||0)} cards</em>`;b.onclick=()=>openPublicProfile(p.uid);pe.appendChild(b)});$("discoverProfilesEmpty")?.classList.toggle("hidden",profiles.length>0)}
-const rows=publicCards.filter(c=>[c.player,c.team,c.year,c.set,c.parallel,c.ownerName,c.ownerUsername].join(" ").toLowerCase().includes(q)),ce=$("discoverCards");if(ce){ce.innerHTML="";rows.slice(0,30).forEach(c=>{const b=document.createElement("button");b.type="button";b.className="discover-card";b.innerHTML=`<img src="${c.front||"/icons/card-placeholder.svg"}" alt=""><div><strong>${esc(c.player)}</strong><span>${esc(c.year)} ${esc(c.set)} • @${esc(c.ownerUsername||"collector")}</span></div>`;b.onclick=()=>openPublicProfile(c.ownerUid);ce.appendChild(b)});$("discoverCardsEmpty")?.classList.toggle("hidden",rows.length>0)}}
-function openPublicProfile(uidValue){const p=publicProfiles.find(x=>x.uid===uidValue);if(!p)return;selectedPublicProfile=p;$("publicAvatar").innerHTML=profileAvatarHTML(p,p.displayName);$("publicName").textContent=p.displayName||"Collector";$("publicHandle").textContent=`@${p.username||"collector"}`;$("publicBio").textContent=p.bio||"";$("publicFavorite").textContent=`Favorite: ${p.favorite||"—"}`;$("publicCardCount").textContent=Number(p.cardCount||0);$("publicVaultValue").textContent=money(Number(p.vaultValue||0));$("publicAchievementCount").textContent=Number(p.achievementCount||0);const el=$("publicShowcase");el.innerHTML="";(p.showcaseIds||[]).forEach(id=>{const c=publicCards.find(x=>x.ownerUid===uidValue&&x.id===id);if(!c)return;const d=document.createElement("div");d.className="showcase-card";d.innerHTML=`<img src="${c.front||"/icons/card-placeholder.svg"}" alt=""><div><strong>${esc(c.player)}</strong><span>${money(c.value)}</span></div>`;el.appendChild(d)});go("publicProfile")}
+
+function followDocId(followerUid,targetUid){return `${followerUid}_${targetUid}`}
+function likeDocId(userUid,card){return `${userUid}_${card.ownerUid}_${card.id}`}
+function publicCardKey(card){return `${card.ownerUid}_${card.id}`}
+function isFollowing(uidValue){return socialFollows.some(f=>f.followerUid===currentUser?.uid&&f.targetUid===uidValue)}
+function followerCount(uidValue){return socialFollows.filter(f=>f.targetUid===uidValue).length}
+function followingCountFor(uidValue){return socialFollows.filter(f=>f.followerUid===uidValue).length}
+function likedByMe(card){return socialLikes.some(l=>l.userUid===currentUser?.uid&&l.publicCardId===publicCardKey(card))}
+function likeCount(card){const key=publicCardKey(card);return socialLikes.filter(l=>l.publicCardId===key).length}
+function setDiscoverTab(tab){
+  activeDiscoverTab=tab||"for-you";
+  document.querySelectorAll("[data-discover-tab]").forEach(b=>b.classList.toggle("active",b.dataset.discoverTab===activeDiscoverTab));
+  const map={"for-you":"discoverForYou","following":"discoverFollowing","cards":"discoverCardsPanel","collectors":"discoverCollectorsPanel"};
+  Object.values(map).forEach(id=>$(id)?.classList.add("hidden"));
+  $(map[activeDiscoverTab])?.classList.remove("hidden");
+  renderDiscover();
+}
+async function toggleFollow(uidValue){
+  if(!currentUser||!firebase?.db){toast("Sign in to follow collectors");return}
+  if(!uidValue||uidValue===currentUser.uid)return;
+  const id=followDocId(currentUser.uid,uidValue),ref=firebase.doc(firebase.db,"publicFollows",id);
+  try{
+    if(isFollowing(uidValue)){
+      await firebase.deleteDoc(ref);toast("Unfollowed");
+    }else{
+      await firebase.setDoc(ref,{followerUid:currentUser.uid,targetUid:uidValue,createdAt:Date.now()});
+      toast("Following");
+    }
+  }catch(err){console.warn(err);toast("Could not update follow")}
+}
+async function toggleLike(card){
+  if(!currentUser||!firebase?.db){toast("Sign in to like cards");return}
+  const id=likeDocId(currentUser.uid,card),ref=firebase.doc(firebase.db,"publicLikes",id);
+  try{
+    if(likedByMe(card))await firebase.deleteDoc(ref);
+    else await firebase.setDoc(ref,{userUid:currentUser.uid,publicCardId:publicCardKey(card),ownerUid:card.ownerUid,cardId:card.id,createdAt:Date.now()});
+  }catch(err){console.warn(err);toast("Could not update like")}
+}
+function collectorMatchScore(p){
+  let score=0;
+  const mine=new Set(cards.map(c=>String(c.sport||"").toLowerCase()).filter(Boolean));
+  const theirs=new Set(publicCards.filter(c=>c.ownerUid===p.uid).map(c=>String(c.sport||"").toLowerCase()).filter(Boolean));
+  theirs.forEach(x=>{if(mine.has(x))score+=3});
+  const fav=String(platformProfile?.favorite||"").toLowerCase();
+  const pFav=String(p.favorite||"").toLowerCase();
+  if(fav&&pFav&&(fav.includes(pFav)||pFav.includes(fav)))score+=6;
+  score+=Math.min(3,followerCount(p.uid));
+  return score;
+}
+function socialCardMarkup(card,{trending=false}={}){
+  const likes=likeCount(card),liked=likedByMe(card);
+  return `<article class="social-card" data-public-card="${esc(publicCardKey(card))}">
+    ${trending&&likes?`<span class="trending-chip">♥ ${likes}</span>`:""}
+    <button class="social-card-main" type="button" data-open-owner="${esc(card.ownerUid)}">
+      <img src="${card.front||"/icons/card-placeholder.svg"}" alt="${esc(card.player||"Card")}">
+      <div class="social-card-copy">
+        <strong>${esc(card.player||"Unknown card")}</strong>
+        <span>${esc([card.year,card.set,card.parallel].filter(Boolean).join(" • "))}</span>
+      </div>
+    </button>
+    <div class="social-card-foot">
+      <button class="social-owner" type="button" data-open-owner="${esc(card.ownerUid)}">@${esc(card.ownerUsername||"collector")}</button>
+      <button class="like-button ${liked?"liked":""}" type="button" data-like-card="${esc(publicCardKey(card))}"><span>${liked?"♥":"♡"}</span><b>${likes}</b></button>
+    </div>
+  </article>`;
+}
+function bindSocialCardActions(container){
+  if(!container)return;
+  container.querySelectorAll("[data-open-owner]").forEach(b=>b.addEventListener("click",()=>openPublicProfile(b.dataset.openOwner)));
+  container.querySelectorAll("[data-like-card]").forEach(b=>b.addEventListener("click",e=>{
+    e.stopPropagation();
+    const key=b.dataset.likeCard,c=publicCards.find(x=>publicCardKey(x)===key);
+    if(c)toggleLike(c);
+  }));
+}
+function renderSuggestedCollectors(q=""){
+  const el=$("suggestedCollectors");if(!el)return;
+  const rows=publicProfiles.filter(p=>[p.displayName,p.username,p.favorite,p.bio].join(" ").toLowerCase().includes(q))
+    .sort((a,b)=>collectorMatchScore(b)-collectorMatchScore(a)).slice(0,8);
+  el.innerHTML="";
+  rows.forEach(p=>{
+    const wrap=document.createElement("div");wrap.className="suggested-collector";
+    wrap.innerHTML=`<button class="suggested-avatar" type="button">${profileAvatarHTML(p,p.displayName)}</button><strong>${esc(p.displayName||"Collector")}</strong><p>@${esc(p.username||"collector")}</p><button class="mini-follow ${isFollowing(p.uid)?"following":""}" type="button">${isFollowing(p.uid)?"Following":"Follow"}</button>`;
+    wrap.querySelector(".suggested-avatar").onclick=()=>openPublicProfile(p.uid);
+    wrap.querySelector(".mini-follow").onclick=()=>toggleFollow(p.uid);
+    el.appendChild(wrap);
+  });
+  $("suggestedCollectorsEmpty")?.classList.toggle("hidden",rows.length>0);
+}
+function renderCardGrid(id,cardsToRender,emptyId,{trending=false}={}){
+  const el=$(id);if(!el)return;
+  el.innerHTML=cardsToRender.map(c=>socialCardMarkup(c,{trending})).join("");
+  bindSocialCardActions(el);
+  $(emptyId)?.classList.toggle("hidden",cardsToRender.length>0);
+}
+function renderFeaturedCollections(q=""){
+  const el=$("featuredCollections");if(!el)return;
+  const groups={};
+  publicCards.forEach(c=>{
+    const name=String(c.collection||"").trim();
+    if(!name||!name.toLowerCase().includes(q))return;
+    if(!groups[name])groups[name]=[];
+    groups[name].push(c);
+  });
+  const rows=Object.entries(groups).sort((a,b)=>b[1].length-a[1].length).slice(0,6);
+  el.innerHTML="";
+  rows.forEach(([name,group])=>{
+    const total=group.reduce((s,c)=>s+Number(c.value||0),0);
+    const b=document.createElement("button");b.type="button";b.className="featured-collection";
+    const imgs=group.slice(0,3).map(c=>`<img src="${c.front||"/icons/card-placeholder.svg"}" alt="">`).join("");
+    b.innerHTML=`<div class="collection-preview">${imgs}</div><div><strong>${esc(name)}</strong><span>${group.length} shared card${group.length===1?"":"s"}</span></div><b>${money(total)}</b>`;
+    b.onclick=()=>{$("discoverSearch").value=name;setDiscoverTab("cards")};
+    el.appendChild(b);
+  });
+  $("featuredCollectionsEmpty")?.classList.toggle("hidden",rows.length>0);
+}
+function renderFollowingFeed(q=""){
+  const followingUids=new Set(socialFollows.filter(f=>f.followerUid===currentUser?.uid).map(f=>f.targetUid));
+  const rows=publicCards.filter(c=>followingUids.has(c.ownerUid)&&[c.player,c.team,c.set,c.parallel,c.ownerName,c.ownerUsername].join(" ").toLowerCase().includes(q))
+    .sort((a,b)=>Number(b.sharedAt||0)-Number(a.sharedAt||0));
+  $("followingCount").textContent=followingUids.size;
+  const el=$("followingFeed");if(!el)return;el.innerHTML="";
+  rows.slice(0,40).forEach(c=>{
+    const p=publicProfiles.find(x=>x.uid===c.ownerUid)||{displayName:c.ownerName,username:c.ownerUsername,photo:c.ownerPhoto};
+    const item=document.createElement("article");item.className="feed-item";
+    item.innerHTML=`<button class="feed-owner" type="button"><div class="feed-owner-avatar">${profileAvatarHTML(p,p.displayName)}</div><div><strong>${esc(p.displayName||"Collector")}</strong><span>@${esc(p.username||"collector")} • shared ${timeAgo(c.sharedAt)}</span></div></button><div class="feed-card-row"><img src="${c.front||"/icons/card-placeholder.svg"}" alt=""><div><h3>${esc(c.player||"Card")}</h3><p>${esc([c.year,c.set,c.parallel].filter(Boolean).join(" • "))}</p><button class="like-button ${likedByMe(c)?"liked":""}" type="button"><span>${likedByMe(c)?"♥":"♡"}</span><b>${likeCount(c)}</b></button></div></div>`;
+    item.querySelector(".feed-owner").onclick=()=>openPublicProfile(c.ownerUid);
+    item.querySelector(".like-button").onclick=()=>toggleLike(c);
+    el.appendChild(item);
+  });
+  $("followingFeedEmpty")?.classList.toggle("hidden",rows.length>0);
+}
+function renderCollectorDirectory(q=""){
+  const el=$("allDiscoverCollectors");if(!el)return;
+  const rows=publicProfiles.filter(p=>[p.displayName,p.username,p.bio,p.favorite].join(" ").toLowerCase().includes(q))
+    .sort((a,b)=>followerCount(b.uid)-followerCount(a.uid));
+  el.innerHTML="";
+  rows.forEach(p=>{
+    const row=document.createElement("div");row.className="collector-directory-card";
+    row.innerHTML=`<button class="discover-avatar" type="button">${profileAvatarHTML(p,p.displayName)}</button><button class="collector-copy" type="button"><strong>${esc(p.displayName||"Collector")}</strong><p>@${esc(p.username||"collector")} • ${esc(p.favorite||"Sports cards")}</p></button><div class="collector-actions"><button class="${isFollowing(p.uid)?"following":""}" type="button">${isFollowing(p.uid)?"Following":"Follow"}</button><span>${followerCount(p.uid)} follower${followerCount(p.uid)===1?"":"s"}</span></div>`;
+    row.querySelector(".discover-avatar").onclick=()=>openPublicProfile(p.uid);
+    row.querySelector(".collector-copy").onclick=()=>openPublicProfile(p.uid);
+    row.querySelector(".collector-actions button").onclick=()=>toggleFollow(p.uid);
+    el.appendChild(row);
+  });
+  $("allDiscoverCollectorsEmpty")?.classList.toggle("hidden",rows.length>0);
+}
+function renderDiscover(){
+  const q=($("discoverSearch")?.value||"").toLowerCase().trim();
+  const recent=[...publicCards].filter(c=>[c.player,c.team,c.year,c.set,c.parallel,c.collection,c.ownerName,c.ownerUsername].join(" ").toLowerCase().includes(q))
+    .sort((a,b)=>Number(b.sharedAt||0)-Number(a.sharedAt||0));
+  const trending=[...recent].sort((a,b)=>likeCount(b)-likeCount(a)||Number(b.sharedAt||0)-Number(a.sharedAt||0));
+  renderSuggestedCollectors(q);
+  renderCardGrid("trendingCards",trending.slice(0,6),"trendingCardsEmpty",{trending:true});
+  renderFeaturedCollections(q);
+  renderCardGrid("recentSharedCards",recent.slice(0,8),"recentSharedEmpty");
+  renderFollowingFeed(q);
+  let all=[...recent],sort=$("discoverCardSort")?.value||"trending";
+  if(sort==="trending")all.sort((a,b)=>likeCount(b)-likeCount(a)||Number(b.sharedAt||0)-Number(a.sharedAt||0));
+  else if(sort==="value")all.sort((a,b)=>Number(b.value||0)-Number(a.value||0));
+  else all.sort((a,b)=>Number(b.sharedAt||0)-Number(a.sharedAt||0));
+  renderCardGrid("allDiscoverCards",all,"allDiscoverCardsEmpty",{trending:sort==="trending"});
+  renderCollectorDirectory(q);
+}
+function openPublicProfile(uidValue){
+  const p=publicProfiles.find(x=>x.uid===uidValue);if(!p)return;
+  selectedPublicProfile=p;
+  $("publicAvatar").innerHTML=profileAvatarHTML(p,p.displayName);
+  $("publicName").textContent=p.displayName||"Collector";
+  $("publicHandle").textContent=`@${p.username||"collector"}`;
+  $("publicBio").textContent=p.bio||"";
+  $("publicFavorite").textContent=`Favorite: ${p.favorite||"—"}`;
+  $("publicCardCount").textContent=Number(p.cardCount||0);
+  $("publicVaultValue").textContent=money(Number(p.vaultValue||0));
+  $("publicAchievementCount").textContent=Number(p.achievementCount||0);
+  $("publicFollowerCount").textContent=followerCount(uidValue);
+  $("publicFollowingCount").textContent=followingCountFor(uidValue);
+  const followBtn=$("publicFollowBtn");
+  followBtn.className="follow-primary "+(isFollowing(uidValue)?"following":"");
+  followBtn.textContent=isFollowing(uidValue)?"Following":"Follow";
+  followBtn.onclick=()=>toggleFollow(uidValue);
+  const el=$("publicShowcase");el.innerHTML="";
+  (p.showcaseIds||[]).forEach(id=>{
+    const c=publicCards.find(x=>x.ownerUid===uidValue&&x.id===id);if(!c)return;
+    const d=document.createElement("div");d.className="showcase-card";
+    d.innerHTML=`<img src="${c.front||"/icons/card-placeholder.svg"}" alt=""><div><strong>${esc(c.player)}</strong><span>${money(c.value)}</span></div>`;
+    el.appendChild(d)
+  });
+  go("publicProfile");
+}
 function startOwnProfileSubscription(){
   if(!currentUser||!firebase?.db)return;
   try{
@@ -592,7 +782,29 @@ function startOwnProfileSubscription(){
     },err=>console.warn("Own profile subscription:",err));
   }catch(err){console.warn("Own profile subscription unavailable:",err)}
 }
-function startPublicSubscriptions(){if(!currentUser||!firebase?.db)return;try{unsubscribePublicProfiles?.();unsubscribePublicCards?.();unsubscribePublicProfiles=firebase.onSnapshot(firebase.collection(firebase.db,"publicProfiles"),snap=>{publicProfiles=snap.docs.map(d=>({uid:d.id,...d.data()})).filter(p=>p.uid!==currentUser.uid);renderDiscover()},err=>console.warn("Public profiles:",err));unsubscribePublicCards=firebase.onSnapshot(firebase.collection(firebase.db,"publicCards"),snap=>{publicCards=snap.docs.map(d=>d.data()).filter(Boolean);renderDiscover()},err=>console.warn("Public cards:",err))}catch(err){console.warn("Discover unavailable:",err)}}
+function startPublicSubscriptions(){
+  if(!currentUser||!firebase?.db)return;
+  try{
+    unsubscribePublicProfiles?.();unsubscribePublicCards?.();unsubscribeFollows?.();unsubscribeLikes?.();
+    unsubscribePublicProfiles=firebase.onSnapshot(firebase.collection(firebase.db,"publicProfiles"),snap=>{
+      publicProfiles=snap.docs.map(d=>({uid:d.id,...d.data()})).filter(p=>p.uid!==currentUser.uid);
+      renderDiscover();
+    },err=>console.warn("Public profiles:",err));
+    unsubscribePublicCards=firebase.onSnapshot(firebase.collection(firebase.db,"publicCards"),snap=>{
+      publicCards=snap.docs.map(d=>({publicDocId:d.id,...d.data()})).filter(Boolean);
+      renderDiscover();
+    },err=>console.warn("Public cards:",err));
+    unsubscribeFollows=firebase.onSnapshot(firebase.collection(firebase.db,"publicFollows"),snap=>{
+      socialFollows=snap.docs.map(d=>({id:d.id,...d.data()})).filter(Boolean);
+      renderDiscover();
+      if(selectedPublicProfile&&$("publicProfile")?.classList.contains("active"))openPublicProfile(selectedPublicProfile.uid);
+    },err=>console.warn("Follows:",err));
+    unsubscribeLikes=firebase.onSnapshot(firebase.collection(firebase.db,"publicLikes"),snap=>{
+      socialLikes=snap.docs.map(d=>({id:d.id,...d.data()})).filter(Boolean);
+      renderDiscover();
+    },err=>console.warn("Likes:",err));
+  }catch(err){console.warn("Discover unavailable:",err)}
+}
 function renderProfile(){
   if(!platformProfile)loadPlatformState();
   const name=platformProfile?.displayName||accountName();
@@ -1277,6 +1489,10 @@ async function initFirebase(){
         unsubscribeOwnProfile?.();unsubscribeOwnProfile=null;
         unsubscribePublicProfiles?.();unsubscribePublicProfiles=null;
         unsubscribePublicCards?.();unsubscribePublicCards=null;
+        unsubscribeFollows?.();unsubscribeFollows=null;
+        unsubscribeLikes?.();unsubscribeLikes=null;
+        unsubscribeFollows?.();unsubscribeFollows=null;
+        unsubscribeLikes?.();unsubscribeLikes=null;
         authMode="guest";currentUser=null;cards=readLocalCards();loadPlatformState();showApp();
       }else{
         unsubscribeOwnProfile?.();unsubscribeOwnProfile=null;
@@ -1377,9 +1593,12 @@ $("saveProfileBtn")?.addEventListener("click",async()=>{
   savePlatformLocal();renderProfile();closeProfileEdit();addActivity("profile","Updated collector profile");
   try{await syncPlatformProfile();toast("Profile synced")}catch(e){console.warn(e);toast("Profile saved locally — cloud sync pending")}
 });
-$("discoverSearch")?.addEventListener("input",renderDiscover);
 $("cardPublicToggle")?.addEventListener("change",async()=>{const c=cards.find(x=>x.id===currentDetailId);if(!c)return;c.public=$("cardPublicToggle").checked;try{await persistCard(c);await syncPlatformProfile();addActivity("share",`${c.public?"Shared":"Unshared"} ${c.player}`);toast(c.public?"Card is public":"Card is private")}catch(e){console.warn(e);saveLocalCards();toast("Visibility saved locally")}});
 $("copyShareLinkBtn")?.addEventListener("click",async()=>{const c=cards.find(x=>x.id===currentDetailId);if(!c)return;if(!c.public){toast("Turn on Public card first");return}const link=`${location.origin}${location.pathname}?card=${encodeURIComponent(c.id)}&owner=${encodeURIComponent(currentUser?.uid||"")}`;try{await navigator.clipboard.writeText(link);toast("Share link copied")}catch{toast("Could not copy link")}});
+document.querySelectorAll("[data-discover-tab]").forEach(b=>b.addEventListener("click",()=>setDiscoverTab(b.dataset.discoverTab)));
+document.querySelectorAll("[data-switch-discover]").forEach(b=>b.addEventListener("click",()=>setDiscoverTab(b.dataset.switchDiscover)));
+$("discoverSearch")?.addEventListener("input",renderDiscover);
+$("discoverCardSort")?.addEventListener("change",renderDiscover);
 $("updateValueBtn")?.addEventListener("click",()=>updateMarketValue(true));
 renderPricing();
 $("copyTitleBtn")?.addEventListener("click",()=>{const c=cards.find(x=>x.id===currentDetailId);if(c)copyText(listingTitleFor(c),"Title copied")});

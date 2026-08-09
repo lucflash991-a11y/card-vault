@@ -1,4 +1,4 @@
-# Card Vault v2.0.2 — Cross-Device Profile Sync
+# Card Vault v2.1.0 — Discover Social Update
 
 Major rebuild of the Card Vault PWA.
 
@@ -314,3 +314,45 @@ Publish the included `firestore.rules` so `publicProfiles` and `publicCards` wor
 - Profile and Vault privacy settings sync.
 - Top 6 Showcase syncs.
 - Firestore becomes the signed-in source of truth; localStorage is only a cache/fallback.
+
+
+## v2.1.0 Discover Social Update
+
+Home remains unchanged and personal.
+
+### Discover navigation
+- For You
+- Following
+- Cards
+- Collectors
+
+### For You
+- Suggested collectors ranked from collection overlap / favorite interests
+- Trending cards ranked by likes
+- Featured public collections
+- Recently shared cards
+
+### Social
+- Follow / unfollow collectors
+- Followers and Following counts
+- Following feed
+- Like / unlike public cards
+- Like counts update in real time
+- Public profile Follow button
+
+### Cards
+- Search public cards
+- Sort by Trending, Newest, or Highest Value
+
+### Collectors
+- Collector directory
+- Search collectors
+- See follower counts
+- Follow directly from the directory
+
+### Firestore
+v2.1 introduces:
+- `publicFollows`
+- `publicLikes`
+
+Publish the included `firestore.rules` before testing follow/like functionality.
