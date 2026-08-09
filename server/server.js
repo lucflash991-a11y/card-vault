@@ -143,7 +143,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.get("*", (req, res) => {
+app.use((req, res) => {
   res.sendFile(process.cwd() + "/public/index.html");
 });
 
