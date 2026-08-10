@@ -1,154 +1,358 @@
-# Card Vault v2.3.1 — Trade Center + Messaging Hotfix
+# Card Vault v2.1.0 — Discover Social Update
 
-Card Vault is a modern sports-card collection platform built for web and iPhone/Safari use.
+Major rebuild of the Card Vault PWA.
 
-## Current Version
-**v2.3.1**
+## What changed
 
-This release includes the planned **v2.2 trading update**, the **v2.3 messaging + notifications update**, and the **v2.3.1 messaging hotfix**.
+### Modern UI
+- Refined premium light mode
+- Full dark mode
+- Light / Dark / System appearance picker
+- New portfolio dashboard
+- Top-card highlight
+- Cleaner Vault cards and filters
+- New card detail screen with front/back viewer
+- Better mobile spacing and iPhone Home Screen layout
 
-## Main Features
+### Accounts
+- Firebase Authentication integration
+- Continue with Google
+- Sign in with Apple code path
+- Guest mode
+- Signed-in profile state
+- Firestore cloud collection sync
+- Guest-to-account collection migration
 
-### Collection
-- Scan sports cards with AI
-- Front + back card analysis
-- Save cards to your Vault
-- Cloud sync across devices
-- Portfolio value tracking
-- Collection analytics
-- Favorites
-- Tags
-- Custom collections
-- Raw / graded filters
-- Selling Studio
-- Batch scanning
+### AI scanner
+- Front/back photo processing
+- Safari-safe image loading
+- Confidence scores
+- Alternate matches
+- Confirmation editor
+- 50-second request timeout
+- clearer errors and status states
+- conservative identification prompt
 
-### Discover
-- For You
-- Following
-- Market
-- Collectors
-- Suggested collectors
-- Trending public cards
-- Recently shared cards
-- Featured collections
-- Follow / unfollow
-- Followers / following counts
-- Likes on public cards
+### Bug fixes / hardening
+- Duplicate-card bug fixed with one stable scan ID per scan
+- Save button locks while writing
+- Firestore save uses the scan ID as the document ID, making repeated saves idempotent
+- Local save also replaces same ID rather than inserting duplicates
+- Existing exact duplicate scans are deduplicated during migration
+- Scan state fully resets after save
+- Photo replacement resets stale AI results
+- AI request cancellation
+- Service worker cache bumped and old caches removed
+- Express 5 wildcard crash fixed
+- API rate limit protection
+- Health/config endpoints
+- local/cloud storage modes separated
 
-### Market + Trading
-- Mark cards **Open to Trade**
-- Mark cards **For Sale**
-- Optional asking price
-- Browse cards in Market
-- Filter For Trade / For Sale
-- Cash offers
-- Card-for-card offers
-- Multi-card offers
-- Cards + cash offers
-- Received / Sent / Completed offer inbox
-- Accept offers
-- Decline offers
-- Counter offers
+## Run locally
 
-Card Vault does **not** automatically remove or transfer cards from either user's Vault after a trade.
-
-### Messaging
-- Private messages between collectors
-- Message collectors from their public profile
-- Conversations connected to collectors and offers
-- Enter to send
-- Shift + Enter for a new line
-
-### v2.3.1 Messaging Hotfix
-Fixed an issue where the Send button could appear to do nothing when starting a brand-new conversation.
-
-The app now:
-- Stores the recipient immediately when chat opens
-- Sends without waiting for Firestore to sync the conversation back first
-- Shows an error if sending fails
-- Temporarily disables the send button while sending
-- Supports Enter to send
-
-### Notifications
-Notifications can be created for:
-- New followers
-- Likes
-- Trade offers
-- Counter offers
-- Accepted / declined offers
-- Messages
-
-### Profiles
-- Collector name
-- Username
-- Bio
-- Favorite team/player
-- Profile photo
-- Public/private profile controls
-- Public/private Vault controls
-- Showcase / Top 6
-- Followers / Following
-- Public market cards
-- Message button
-- Block User
-
-### Safety / Privacy
-- Block collectors
-- Private card data remains under each user's account
-- No payment processing
-- No shipping addresses
-- No payment information stored
-
-## Firebase
-
-Card Vault uses Firebase Authentication and Firestore.
-
-Current social collections include:
-
-- `publicProfiles`
-- `publicCards`
-- `publicFollows`
-- `publicLikes`
-- `publicOffers`
-- `publicConversations`
-- `publicMessages`
-- `publicNotifications`
-- `publicBlocks`
-
-The v2.3 Firestore rules must be published for trading, messaging, notifications, and blocking to work.
-
-## Deployment
-
-The app is deployed through Render and connected to the GitHub repository.
-
-When updating the app, the main files are:
-
-```text
-public/index.html
-public/styles.css
-public/app.js
-server/server.js
+```bash
+npm install
+npm start
 ```
 
-## AI
+Open `http://localhost:3000`.
 
-Card identification uses Gemini.
+Gemini works when `GEMINI_API_KEY` is configured.
+Guest mode works without Firebase.
+See `FIREBASE_SETUP.md` to enable Google / cloud accounts and Apple support.
 
-The current scan setup is designed to stay as quota-conscious as possible and uses the existing free-tier strategy.
+## Deploy
+This repo includes `render.yaml`.
 
-## Planned
+For an existing Render service, replace the GitHub project files with this version.
+Keep your existing `GEMINI_API_KEY`.
+Add `FIREBASE_WEB_CONFIG` when Firebase is ready.
 
-### v3.0
-Card Vault will expand into separated collectible vaults while staying inside the same app.
+## Important
+Apple sign-in cannot simply be activated by frontend code. Apple requires the web Sign in with Apple developer configuration before the Firebase Apple provider can work.
 
-Planned categories include:
-- Sports Cards
-- Pokémon
-- Comics
-- Funko
-- Other collectibles
 
-Each category will have its **own separate Home, Vault, Scan, Discover, and stats** while keeping the same Card Vault UI.
+## v1.0.1 Google sign-in hotfix
+- Google login now uses `signInWithPopup()` first instead of redirect-first on iPhone/PWA.
+- Firebase authentication is explicitly persisted with `browserLocalPersistence`.
+- Redirect is retained only as a fallback when the browser blocks popups.
+- Redirect recovery now restores the Firebase user before showing the app.
+- Guest-mode state is cleared immediately after successful Firebase authentication.
+- Login buttons lock while authentication is in progress.
+- Service worker cache bumped so installed iPhone copies receive the fix.
 
-Collections will not all be mixed together on one Home screen.
+
+## v1.0.2 authentication gate fix
+- Successful Firebase authentication now opens Card Vault immediately.
+- Firestore sync no longer blocks the transition away from the login screen.
+- Cloud sync and theme sync run after the authenticated UI is visible.
+- Firestore permission/network errors now show a sync warning instead of acting like login failed.
+- Firestore live listener starts before guest-card migration.
+- Service worker cache bumped to force the updated authentication code onto installed copies.
+
+
+## v1.0.3 iPhone Safari Google auth fix
+- Removed `signInWithRedirect()` completely.
+- Google authentication is now popup-only.
+- Fixes Firebase "Unable to process request due to missing initial state" caused by storage-partitioned Safari environments.
+- If Safari blocks the popup, Card Vault now reports that instead of redirecting to a broken Firebase auth page.
+- Removed stale redirect-result recovery code.
+- Service worker cache bumped.
+
+
+## v1.0.4 Safari same-site authentication fix
+- Proxies Firebase Auth helper routes through the Render Card Vault domain.
+- `/api/config` now reports the current Card Vault host as Firebase `authDomain`.
+- Removes the Safari cross-site storage dependency on `firebaseapp.com`.
+- Keeps Google popup authentication.
+- Service worker cache bumped.
+
+
+## v1.0.5 Firestore card-save fix
+- Compresses card images to small vault thumbnails before writing to Firestore.
+- Keeps AI scan photos high enough quality during recognition, but does not store those large originals in the Firestore document.
+- Adds an 850 KB safety target below Firestore's 1 MiB document limit.
+- Falls back to storing the front image only if a card document is still unusually large.
+- Adds clearer save-error diagnostics.
+- Service-worker cache bumped.
+
+
+## v1.0.6 save diagnostic + metadata-only cloud records
+- Firestore now stores card metadata only; scan photos no longer go into Firestore documents.
+- Front/back images are cached locally on the current device and reattached when cloud card records load.
+- This completely removes Firestore image/document-size issues from card saving.
+- Any remaining save failure now displays the exact Firebase error code and message for diagnosis.
+- Service worker cache bumped.
+
+
+## v1.0.7 cache-proof diagnostic build
+- `index.html` loads `/app.js?v=107`.
+- HTML and app.js are served with no-cache headers.
+- Old service workers are automatically unregistered and Cache Storage is cleared.
+- Profile visibly shows `BUILD v1.0.7`.
+- Save failures show a `CARD VAULT v1.0.7 SAVE ERROR` alert with the exact Firebase code/message.
+- `/api/version` returns the live server build number.
+
+
+## v1.1.7 Market Intelligence
+Automatic pricing UI and backend contract are ready. It intentionally shows eBay approval pending instead of fabricating prices.
+
+
+## v1.1.8 AI Web Market Estimate
+Gemini now uses Google Search grounding to research the exact card on the live web and return an AI market estimate, estimated range, confidence, and up to five clickable source links. This is labeled as an AI estimate, not an official eBay sold average.
+
+
+## v1.1.9 Free-Tier Pricing Fallback
+- Live Google Search-grounded pricing remains the first choice.
+- If Search grounding returns HTTP 429, Card Vault automatically retries with a lighter Gemini request without web grounding.
+- Fallback results are clearly labeled `AI estimate • limited data`.
+- Fallback confidence is capped at Medium and normally Low.
+- Price estimates are cached on-device for 12 hours per exact card identity so rescans do not repeatedly burn free API requests.
+- Automatic pricing uses the cache; the `Update Value` button forces one fresh attempt.
+- No billing is required by Card Vault itself.
+
+
+## v1.2.0 Cross-Device Card Photos
+- Card data and compact card thumbnails now sync through Firestore.
+- Original full-resolution scan photos remain cached on the device that captured them.
+- Other signed-in devices receive the synced front/back thumbnails automatically.
+- Cloud thumbnails are aggressively compressed to keep Firestore documents safely below the size limit.
+- If a record is unusually large, Card Vault falls back to syncing only the front thumbnail rather than failing the card save.
+- Existing v1.1.9 free-tier AI pricing behavior remains intact.
+
+
+## v1.4.0 Mega Update
+
+This combines the planned v1.2.1, v1.3, and v1.4 work.
+
+### AI Efficiency (v1.2.1)
+- Identification + rough value estimate happen in ONE Gemini request.
+- No automatic second pricing request after every scan.
+- Exact scan results are cached on-device for 7 days.
+- Live pricing is optional/manual.
+- Live prices are cached for 24 hours in the browser and on the Render process.
+- HTTP 429 never triggers another fallback Gemini call; Card Vault keeps the existing scan estimate.
+- Duplicate button presses remain guarded.
+
+### Portfolio Dashboard (v1.2.1)
+- Invested amount
+- Profit/loss
+- Average card value
+- 30-day collection trend chart
+- Sport breakdown
+- Top-card highlight
+- Portfolio snapshots retained for up to 90 days on device
+
+### Pricing (v1.3)
+- Rough AI price included with card identification
+- Automatic value field population without another request
+- Optional Live Refresh using grounded web search
+- 24-hour caching
+- Pricing source, confidence, range, freshness, and source links
+- Price history per card
+- Live refresh rate limiting falls back to the existing estimate rather than failing the card
+
+### Card Details (v1.4)
+- Full front/back gallery
+- Favorite cards
+- Edit player, team, year, set, card number, parallel, serial, grade, paid, and value
+- Profit/loss
+- AI match confidence
+- Value intelligence
+- Live price refresh
+- Clickable price sources
+- Price-history chart
+- Notes
+- Delete card
+
+Cross-device cloud thumbnails, Google accounts, Firestore sync, dark mode, and the existing scan/save fixes remain intact.
+
+
+## v1.4.1 — Vault Value History redesign
+- Renamed the old Collection Trend section to Vault Value History.
+- Larger current vault value.
+- Clear percentage + dollar change pill.
+- Cleaner gradient-filled chart.
+- Stronger current-value marker.
+- Start and end date labels.
+- Separate Start Value / Current Value / Change summary row.
+- Better dark-mode presentation.
+
+
+## v1.7.0 Mega Update
+
+Combines the planned v1.5, v1.6, and v1.7 releases.
+
+### v1.5 — Portfolio Analytics
+- Biggest gainer and biggest loser based on saved card price history
+- Top players by collection value
+- Top sets by collection value
+- Existing invested / value / profit / average metrics retained
+- Existing Vault Value History retained
+
+### v1.6 — Scanner 2.0
+- Single-card and Batch Mode
+- Batch session counter and rapid save → next-card flow
+- Front/back photo-quality analysis for darkness, brightness/glare risk, low detail, and framing
+- Expanded AI checks for slabs and visible grades
+- Stronger prompt for exact parallels and variations
+- Existing one-call identification + rough value estimate and scan caching retained
+
+### v1.7 — Search & Organization
+- Search includes tags and collection names
+- Raw-only / graded-only filter
+- Favorites-only filter
+- Custom collection filter
+- Sort by highest profit
+- Add custom Collection field to any card
+- Add comma-separated Tags
+- Favorites remain visible throughout the Vault
+- Full card detail editing retained
+
+This build keeps Google accounts, Firestore sync, cross-device thumbnails, dark mode, AI efficiency, pricing cache, live price refresh, card details, and all fixes from v1.4.1.
+
+
+## v1.7.1 AI Endurance Update
+- Normal scans now prefer stable `gemini-3.1-flash-lite`, a multimodal model optimized for high-frequency lightweight workloads.
+- Automatic model routing falls back to stable `gemini-2.5-flash` on 404/429/503 instead of immediately failing.
+- Scan photos are resized to 900px max and JPEG quality 0.72 before upload, reducing image payload and token pressure.
+- Output is capped to 1,800 tokens and temperature lowered.
+- Identification still includes the rough value estimate in the SAME request.
+- Improved image-result caching uses a tiny perceptual-style fingerprint so repeat scans can be reused more efficiently.
+- Live web pricing remains manual and separate; it does not run during normal scanning.
+- Clearer 429/cooldown messaging.
+
+
+## v1.9.0
+### Wantlist
+Dedicated Wantlist tab with target price, priority, search, notes, and editing. Uses no AI requests.
+### Selling Mode
+Listing Studio on every card with suggested list price, profit-vs-paid, listing title/description, full copy, Facebook draft, and eBay draft. Uses existing card data and no extra AI requests.
+
+
+## v1.9.1
+- Removed Wantlist completely.
+- Removed Wantlist tab, modal, local storage, filters, and code.
+- Selling Mode / Listing Studio remains intact.
+- Existing AI endurance, Scanner 2.0, portfolio analytics, filters, tags, collections, pricing, cloud sync, and card details remain intact.
+
+
+## v2.0.0 Card Vault Platform
+- Home stays clean and personal.
+- New Discover tab for the platform/social side.
+- Public collector profiles.
+- Username, display name, bio, favorite team/player, profile photo.
+- Public/private profile and vault controls.
+- Choose up to 6 Showcase cards.
+- Per-card Public toggle.
+- Shared cards appear in Discover.
+- Copy share link.
+- Achievement badges.
+- Personal activity feed.
+- Public collector profile viewer.
+- Existing Scanner 2.0, Batch Mode, Selling Mode, analytics, tags, collections, pricing, AI endurance and cloud sync remain.
+
+### Firebase
+Publish the included `firestore.rules` so `publicProfiles` and `publicCards` work with proper owner permissions.
+
+
+## v2.0.1 Profile Hotfix
+- Fixes Edit Profile appearing to do nothing.
+- Fixes Manage Showcase / Top 6 appearing to do nothing.
+- Restores the missing bottom-sheet modal CSS.
+- Adds correct z-index, backdrop, mobile-safe scrolling, animation, and body scroll lock.
+- Adds aria-hidden state updates and Escape-to-close for desktop.
+- No platform features were removed.
+
+
+## v2.0.2 Cross-Device Profile Sync
+- Signed-in profiles now subscribe to `users/{uid}/profile/main` in real time.
+- Collector/display name syncs between devices.
+- Username syncs between devices.
+- Bio and favorite team/player sync.
+- Profile photo syncs.
+- Profile and Vault privacy settings sync.
+- Top 6 Showcase syncs.
+- Firestore becomes the signed-in source of truth; localStorage is only a cache/fallback.
+
+
+## v2.1.0 Discover Social Update
+
+Home remains unchanged and personal.
+
+### Discover navigation
+- For You
+- Following
+- Cards
+- Collectors
+
+### For You
+- Suggested collectors ranked from collection overlap / favorite interests
+- Trending cards ranked by likes
+- Featured public collections
+- Recently shared cards
+
+### Social
+- Follow / unfollow collectors
+- Followers and Following counts
+- Following feed
+- Like / unlike public cards
+- Like counts update in real time
+- Public profile Follow button
+
+### Cards
+- Search public cards
+- Sort by Trending, Newest, or Highest Value
+
+### Collectors
+- Collector directory
+- Search collectors
+- See follower counts
+- Follow directly from the directory
+
+### Firestore
+v2.1 introduces:
+- `publicFollows`
+- `publicLikes`
+
+Publish the included `firestore.rules` before testing follow/like functionality.
