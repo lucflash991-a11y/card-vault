@@ -413,9 +413,8 @@
           <div class="form-line"><label for="dTags">Tags</label><input id="dTags" placeholder="rookie, auto, numbered"></div>
         </div>
 
-        <div class="detail-section-title"><small>MARKET</small><h2>Availability</h2></div>
-        <section class="market-toggle-panel"><div><strong>Open to Trade</strong><p>Let collectors include this card in trade offers.</p></div><label class="switch-control"><input id="cardTradeToggle" type="checkbox"><span></span></label></section>
-        <section class="market-toggle-panel"><div><strong>For Sale</strong><p>Show this card in Market as available for cash offers.</p></div><label class="switch-control"><input id="cardSaleToggle" type="checkbox"><span></span></label></section>
+        <div class="detail-section-title"><small>MARKET</small><h2>Listing</h2></div>
+        <section class="listing-status-panel"><label for="cardListingStatus">Listing status</label><select id="cardListingStatus"><option value="not-listed">Not Listed</option><option value="sale">For Sale</option><option value="trade">For Trade</option><option value="both">For Sale + Trade</option><option value="pending">Pending Deal</option><option value="closed">Sold / Traded</option></select><p id="listingStatusHelp">Choose how this card appears in Market.</p></section>
         <div class="market-price-row"><label for="cardAskPrice">Asking price</label><div><span>$</span><input id="cardAskPrice" type="number" min="0" step="0.01" placeholder="Optional"></div></div>
 
         <div class="detail-section-title"><small>PLATFORM</small><h2>Share this card</h2></div>
@@ -519,8 +518,10 @@
           </div>
           <div class="market-controls">
             <input id="marketPlayerFilter" type="search" placeholder="Player / team / set">
+            <select id="marketSportFilter"><option value="all">All sports</option></select>
             <select id="marketConditionFilter"><option value="all">All conditions</option><option value="graded">Graded</option><option value="raw">Raw</option></select>
-            <select id="marketSort"><option value="newest">Newest</option><option value="value-high">Value: high to low</option><option value="value-low">Value: low to high</option><option value="trending">Most liked</option></select>
+            <div class="market-price-range"><input id="marketMinPrice" type="number" min="0" step="1" placeholder="Min $"><input id="marketMaxPrice" type="number" min="0" step="1" placeholder="Max $"></div>
+            <select id="marketSort"><option value="newest">Newest</option><option value="price-low">Ask: low to high</option><option value="price-high">Ask: high to low</option><option value="value-high">Value: high to low</option><option value="trending">Most liked</option></select>
           </div>
           <div id="marketCards" class="social-card-grid"></div>
           <div id="marketCardsEmpty" class="discover-big-empty hidden"><span>◇</span><h2>No market cards yet</h2><p>Cards marked For Trade or For Sale will show up here.</p></div>
@@ -562,15 +563,11 @@
           <div class="settings-title"><div><small>SHOWCASE</small><h2>Featured cards</h2></div></div>
           <div id="publicShowcase" class="showcase-grid"></div>
         </section>
-        <div class="public-profile-actions">
-          <button id="publicMessageBtn" class="secondary-button" type="button">Message</button>
-          <button id="publicBlockBtn" class="danger-outline-button" type="button">Block user</button>
-        </div>
-        <section class="profile-platform-section">
-          <div class="settings-title"><div><small>MARKET</small><h2>For Trade / Sale</h2></div></div>
-          <div id="publicMarketCards" class="social-card-grid"></div>
-          <p id="publicMarketEmpty" class="muted-copy">No market cards.</p>
-        </section>
+        <div class="public-trade-stats"><div><strong id="publicCompletedTrades">0</strong><span>Completed Trades</span></div><div><strong id="publicForSaleCount">0</strong><span>For Sale</span></div><div><strong id="publicForTradeCount">0</strong><span>For Trade</span></div></div>
+        <div class="public-profile-actions"><button id="publicMessageBtn" class="secondary-button" type="button">Message</button><button id="publicBlockBtn" class="danger-outline-button" type="button">Block user</button><button id="publicReportBtn" class="danger-outline-button" type="button">Report</button></div>
+        <div class="public-profile-tabs"><button class="public-profile-tab active" data-public-tab="market" type="button">Market</button><button class="public-profile-tab" data-public-tab="trades" type="button">Trades</button></div>
+        <section id="publicTabMarket" class="public-tab-panel"><div id="publicMarketCards" class="social-card-grid"></div><p id="publicMarketEmpty" class="muted-copy">No market cards.</p></section>
+        <section id="publicTabTrades" class="public-tab-panel hidden"><div id="publicTradeHistory" class="trade-history-list"></div><p id="publicTradeHistoryEmpty" class="muted-copy">No completed trades yet.</p></section>
       </section>
 
       <section id="profile" class="screen">
@@ -633,7 +630,7 @@
         </div>
 
         <p class="settings-footnote">Platform features live in Discover. Your Home stays personal and clean.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v2.3.2</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v2.4.0</p>
       </section>
     </main>
 
@@ -705,11 +702,13 @@
   <section id="notificationsModal" class="sheet-modal hidden" aria-hidden="true">
     <div class="sheet-backdrop" data-close-notifications></div><div class="sheet-card sheet-card-tall">
       <div class="sheet-grabber"></div><div class="sheet-title-row"><div><small>ACTIVITY</small><h2>Notifications</h2></div><button class="back-circle" data-close-notifications type="button">×</button></div>
-      <div id="notificationList" class="notification-list"></div>
+      <div class="notification-toolbar"><button id="markAllNotificationsRead" type="button">Mark all read</button></div><div id="notificationList" class="notification-list"></div>
     </div>
   </section>
+<section id="offerDetailModal" class="sheet-modal hidden" aria-hidden="true"><div class="sheet-backdrop" data-close-offer-detail></div><div class="sheet-card sheet-card-tall"><div class="sheet-grabber"></div><div class="sheet-title-row"><div><small>OFFER DETAILS</small><h2 id="offerDetailTitle">Offer</h2></div><button class="back-circle" data-close-offer-detail type="button">×</button></div><div id="offerDetailBody"></div><div id="offerDetailActions" class="offer-detail-actions"></div></div></section>
+<section id="counterOfferModal" class="sheet-modal hidden" aria-hidden="true"><div class="sheet-backdrop" data-close-counter></div><div class="sheet-card"><div class="sheet-grabber"></div><div class="sheet-title-row"><div><small>COUNTER OFFER</small><h2>Make a counter</h2></div><button class="back-circle" data-close-counter type="button">×</button></div><div class="money-input"><span>$</span><input id="counterCashAmount" type="number" min="0" step="0.01" placeholder="Cash amount"></div><label class="offer-note-label">Note<textarea id="counterNote" rows="3" maxlength="300" placeholder="Add a note"></textarea></label><button id="submitCounterBtn" class="primary-button" type="button"><span>Send counter</span><span>↗</span></button></div></section>
 <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=232"></script>
+  <script type="module" src="/app.js?v=240"></script>
 </body>
 </html>
