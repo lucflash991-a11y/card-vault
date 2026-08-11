@@ -378,6 +378,7 @@ function normalizeCard(c){
   const history=Array.isArray(c.priceHistory)?c.priceHistory:[];
   return {
     id:c.id || uid(),
+    category:String(c.category||"sports"),
     player:c.player || "Unknown card",
     team:c.team || "",
     sport:c.sport || "Other",
@@ -444,13 +445,55 @@ function applyTheme(choice,save=true){
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change",()=>{if(currentThemeChoice==="system")applyTheme("system",false)});
 applyTheme(currentThemeChoice,false);
 
+
+const ACTIVE_VAULT_KEY="cv-active-vault-v3";
+let activeVaultCategory="sports";
+
+function vaultMeta(category){
+  return {
+    sports:{name:"Sports Cards",short:"Sports",code:"SC",live:true},
+    pokemon:{name:"Pokémon",short:"Pokémon",code:"PK",live:false,release:"v3.0.1",text:"Pokémon gets its own scanner fields, Home analytics, Vault, Discover and Market."},
+    comics:{name:"Comics",short:"Comics",code:"CM",live:false,release:"v3.0.3",text:"Comics will use barcode-first identification when possible, with cover AI only as a fallback."},
+    funko:{name:"Funko",short:"Funko",code:"FN",live:false,release:"v3.0.2",text:"Funko gets its own Pop number, franchise, exclusive/chase, condition and value tracking."}
+  }[category]||null;
+}
+function showVaultSelector(){
+  $("authGate")?.classList.add("hidden");
+  $("appShell")?.classList.add("hidden");
+  $("vaultGate")?.classList.remove("hidden");
+  $("vaultComingSoon")?.classList.add("hidden");
+}
+function enterVault(category){
+  const meta=vaultMeta(category);if(!meta)return;
+  if(!meta.live){
+    $("vaultComingSoonLabel").textContent=`PLANNED FOR ${meta.release}`;
+    $("vaultComingSoonTitle").textContent=`${meta.name} Vault`;
+    $("vaultComingSoonText").textContent=meta.text;
+    $("vaultComingSoon").classList.remove("hidden");
+    $("vaultComingSoon").scrollIntoView({behavior:"smooth",block:"nearest"});
+    return;
+  }
+  activeVaultCategory=category;
+  localStorage.setItem(ACTIVE_VAULT_KEY,category);
+  $("vaultGate")?.classList.add("hidden");
+  showApp();
+}
+document.querySelectorAll("[data-vault-choice]").forEach(b=>b.addEventListener("click",()=>enterVault(b.dataset.vaultChoice)));
+$("vaultComingSoonClose")?.addEventListener("click",()=>$("vaultComingSoon")?.classList.add("hidden"));
+$("switchVaultBtn")?.addEventListener("click",showVaultSelector);
+
 function showAuthGate(){
   $("authGate").classList.remove("hidden");
+  $("vaultGate")?.classList.add("hidden");
   $("appShell").classList.add("hidden");
 }
 function showApp(){
   $("authGate").classList.add("hidden");
+  $("vaultGate")?.classList.add("hidden");
   $("appShell").classList.remove("hidden");
+  activeVaultCategory="sports";
+  const meta=vaultMeta(activeVaultCategory);
+  if($("switchVaultBtn"))$("switchVaultBtn").innerHTML=`<span>${meta.code}</span><b>${meta.short}</b>`;
   renderAll();
 }
 function go(id){
@@ -542,6 +585,7 @@ async function syncPlatformProfile(){
     vaultValue:cards.reduce((s,c)=>s+Number(c.value||0),0),
     achievementCount:unlockedAchievements().length,
     showcaseIds:showcaseIds.slice(0,6),
+    vaults:["sports"],
     updatedAt:Date.now()
   };
   await firebase.setDoc(firebase.doc(firebase.db,"users",currentUser.uid,"profile","main"),data,{merge:true});
@@ -1236,7 +1280,7 @@ async function prepareCardForCloud(card){
 }
 
 async function persistCard(card){
-  card=normalizeCard(card);
+  card=normalizeCard({...card,category:card?.category||activeVaultCategory||"sports"});
 
   if(currentUser && firebase?.db){
     // Preserve original photos on this device.
@@ -1599,7 +1643,7 @@ async function initFirebase(){
         await startCloudCards();
         startOwnProfileSubscription();
         startPublicSubscriptions();
-        showApp();
+        showVaultSelector();
       }else if(localStorage.getItem(GUEST_KEY)==="1"){
         unsubscribeOwnProfile?.();unsubscribeOwnProfile=null;
         unsubscribePublicProfiles?.();unsubscribePublicProfiles=null;
@@ -1608,7 +1652,7 @@ async function initFirebase(){
         unsubscribeLikes?.();unsubscribeLikes=null;
         unsubscribeFollows?.();unsubscribeFollows=null;
         unsubscribeLikes?.();unsubscribeLikes=null;
-        authMode="guest";currentUser=null;cards=readLocalCards();loadPlatformState();showApp();
+        authMode="guest";currentUser=null;cards=readLocalCards();loadPlatformState();showVaultSelector();
       }else{
         unsubscribeOwnProfile?.();unsubscribeOwnProfile=null;
         unsubscribePublicProfiles?.();unsubscribePublicProfiles=null;
@@ -1650,7 +1694,7 @@ async function providerSignIn(provider, providerName="google"){
     authMode="firebase";
     localStorage.removeItem(GUEST_KEY);
 
-    showApp();
+    showVaultSelector();
     renderProfile();
     toast(`Signed in as ${accountName()}`);
 
@@ -1739,7 +1783,7 @@ $("appleSignIn").addEventListener("click",()=>{
   const p=new firebase.OAuthProvider("apple.com");p.addScope("email");p.addScope("name");providerSignIn(p,"apple");
 });
 $("guestSignIn").addEventListener("click",()=>{
-  localStorage.setItem(GUEST_KEY,"1");authMode="guest";currentUser=null;cards=readLocalCards();showApp();
+  localStorage.setItem(GUEST_KEY,"1");authMode="guest";currentUser=null;cards=readLocalCards();showVaultSelector();
 });
 $("accountActionBtn").addEventListener("click",async()=>{
   if(currentUser && firebase?.auth){

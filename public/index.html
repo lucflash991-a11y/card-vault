@@ -39,6 +39,73 @@
     </div>
   </div>
 
+
+  <div id="vaultGate" class="vault-gate hidden">
+    <div class="vault-select-shell">
+      <div class="vault-select-top">
+        <div class="vault-select-logo">CV</div>
+        <div>
+          <p class="eyebrow">CARD VAULT 3.0</p>
+          <h1>Choose your vault.</h1>
+          <p>Each collection stays completely separate with its own Home, Scan, Vault, Discover and Market.</p>
+        </div>
+      </div>
+
+      <div class="vault-choice-grid">
+        <button class="vault-choice live" data-vault-choice="sports" type="button">
+          <span class="vault-choice-icon">SC</span>
+          <span class="vault-choice-copy">
+            <small>LIVE NOW</small>
+            <strong>Sports Cards</strong>
+            <em>Your current Card Vault collection</em>
+          </span>
+          <span class="vault-choice-arrow">›</span>
+        </button>
+
+        <button class="vault-choice upcoming" data-vault-choice="pokemon" type="button">
+          <span class="vault-choice-icon">PK</span>
+          <span class="vault-choice-copy">
+            <small>COMING NEXT</small>
+            <strong>Pokémon</strong>
+            <em>Separate Pokémon cards, stats and Market</em>
+          </span>
+          <span class="vault-choice-arrow">›</span>
+        </button>
+
+        <button class="vault-choice upcoming" data-vault-choice="comics" type="button">
+          <span class="vault-choice-icon">CM</span>
+          <span class="vault-choice-copy">
+            <small>COMING SOON</small>
+            <strong>Comics</strong>
+            <em>Barcode-first comic identification planned</em>
+          </span>
+          <span class="vault-choice-arrow">›</span>
+        </button>
+
+        <button class="vault-choice upcoming" data-vault-choice="funko" type="button">
+          <span class="vault-choice-icon">FN</span>
+          <span class="vault-choice-copy">
+            <small>COMING SOON</small>
+            <strong>Funko</strong>
+            <em>Separate Pop collection and analytics</em>
+          </span>
+          <span class="vault-choice-arrow">›</span>
+        </button>
+      </div>
+
+      <div id="vaultComingSoon" class="vault-coming-soon hidden">
+        <div>
+          <small id="vaultComingSoonLabel">COMING SOON</small>
+          <h2 id="vaultComingSoonTitle">Pokémon Vault</h2>
+          <p id="vaultComingSoonText">This vault is being built as its own separated Card Vault experience.</p>
+        </div>
+        <button id="vaultComingSoonClose" type="button">Back to vaults</button>
+      </div>
+
+      <p class="vault-select-note">Sports Cards stays exactly where it is. Existing cards are treated as <strong>Sports</strong> automatically so nothing gets lost.</p>
+    </div>
+  </div>
+
   <div id="appShell" class="app-shell hidden">
     <main>
       <section id="home" class="screen active">
@@ -50,15 +117,20 @@
               <b id="homeGreeting">My Collection</b>
             </span>
           </button>
-          <button class="profile-chip" data-go="profile" type="button" aria-label="Open profile">
-            <span id="profileInitial">C</span>
-          </button>
+          <div class="home-header-actions">
+            <button id="switchVaultBtn" class="vault-switch-chip" type="button" aria-label="Switch collectible vault">
+              <span>SC</span><b>Sports</b>
+            </button>
+            <button class="profile-chip" data-go="profile" type="button" aria-label="Open profile">
+              <span id="profileInitial">C</span>
+            </button>
+          </div>
         </header>
 
         <section class="portfolio-card">
           <div class="portfolio-top">
             <div>
-              <span class="portfolio-label">COLLECTION VALUE</span>
+              <span class="portfolio-label">SPORTS VAULT • COLLECTION VALUE</span>
               <strong id="homeValue">$0</strong>
             </div>
             <div id="homeProfit" class="profit-badge">+$0</div>
@@ -630,7 +702,7 @@
         </div>
 
         <p class="settings-footnote">Platform features live in Discover. Your Home stays personal and clean.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v2.4.2</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.0.0</p>
       </section>
     </main>
 
@@ -709,6 +781,6 @@
 <section id="counterOfferModal" class="sheet-modal hidden" aria-hidden="true"><div class="sheet-backdrop" data-close-counter></div><div class="sheet-card"><div class="sheet-grabber"></div><div class="sheet-title-row"><div><small>COUNTER OFFER</small><h2>Make a counter</h2></div><button class="back-circle" data-close-counter type="button">×</button></div><div class="money-input"><span>$</span><input id="counterCashAmount" type="number" min="0" step="0.01" placeholder="Cash amount"></div><label class="offer-note-label">Note<textarea id="counterNote" rows="3" maxlength="300" placeholder="Add a note"></textarea></label><button id="submitCounterBtn" class="primary-button" type="button"><span>Send counter</span><span>↗</span></button></div></section>
 <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=242"></script>
+  <script type="module" src="/app.js?v=300"></script>
 </body>
 </html>
