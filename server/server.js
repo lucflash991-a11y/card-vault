@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"3.3.0"});
+  res.json({version:"3.3.1"});
 });
 
 app.use((req,res,next)=>{
@@ -148,79 +148,145 @@ function getFirebaseConfig(){
 
 
 
+
 const comicLookupCache=new Map();
 const COMIC_CACHE_MS=24*60*60*1000;
 
-function normalizeComicProduct(p={},extra={}){
-  const title=String(p.title||p.name||"Unknown Comic");
-  const images=Array.isArray(p.images)?p.images.filter(Boolean):[];
-  const offers=Array.isArray(p.offers)?p.offers.filter(o=>Number(o?.price)>0):[];
-  const prices=offers.map(o=>Number(o.price)).filter(v=>Number.isFinite(v)&&v>0).sort((a,b)=>a-b);
-  const value=prices.length?prices[Math.floor(prices.length/2)]:Number(p.lowest_recorded_price||0)||0;
-  const issueMatch=title.match(/(?:#|Issue\s*)([0-9A-Za-z.\-]+)/i);
+async function gcdJson(url){
+  const r=await fetch(url,{headers:{"Accept":"application/json","User-Agent":"CardVault/3.3.1"}});
+  if(r.status===429){const e=new Error("Grand Comics Database rate limit reached. Try again later.");e.code=429;throw e}
+  if(!r.ok){const e=new Error("Grand Comics Database lookup failed.");e.code=r.status;throw e}
+  return await r.json();
+}
+function gcdIssueId(apiUrl=""){return String(apiUrl).match(/\/api\/issue\/(\d+)/)?.[1]||""}
+function parseGcdPrinting(variant=""){
+  const m=String(variant).match(/\b(Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth|Ninth|Tenth)\s+Printing\b/i);
+  return m?m[0]:"";
+}
+function normalizeGcdIssue(d={}){
+  const seriesName=String(d.series_name||"");
+  const cleanSeries=seriesName.replace(/\s*\(\d{4}[^)]*series\)\s*$/i,"").trim();
+  const year=String(d.key_date||"").slice(0,4)||String(d.publication_date||"").match(/\b(19|20)\d{2}\b/)?.[0]||"";
+  const barcode=String(d.barcode||"").replace(/\D/g,"");
   return {
-    id:String(extra.id||p.upc||p.ean||p.isbn||`${Date.now()}-${Math.random()}`),
-    title,
-    series:String(extra.series||title.replace(/\s+#?\d+.*$/,"").trim()),
-    issueNumber:String(extra.issueNumber||issueMatch?.[1]||""),
-    publisher:String(extra.publisher||p.brand||""),
-    year:String(extra.year||""),
-    upc:String(extra.upc||p.upc||p.ean||""),
-    supplement:String(extra.supplement||""),
-    isbn:String(extra.isbn||""),
-    image:String(extra.image||images[0]||""),
-    description:String(extra.description||p.description||""),
-    value,
-    priceSource:prices.length?"UPCitemdb current offers":"UPCitemdb product data"
+    id:`gcd-${gcdIssueId(d.api_url)||Date.now()}`,
+    gcdId:gcdIssueId(d.api_url),
+    gcdUrl:String(d.api_url||""),
+    title:cleanSeries||seriesName||"Unknown Comic",
+    series:cleanSeries||seriesName,
+    issueNumber:String(d.number||String(d.descriptor||"").match(/^[^[]+/)?.[0]?.trim()||""),
+    publisher:String(d.indicia_publisher||""),
+    year,volume:String(d.volume||""),
+    variant:String(d.variant_name||""),
+    printing:parseGcdPrinting(d.variant_name||d.descriptor||""),
+    coverArtist:String((d.story_set||[]).find(s=>s.type==="cover")?.pencils||""),
+    upc:barcode.length>5?barcode.slice(0,-5):barcode,
+    supplement:barcode.length>5?barcode.slice(-5):"",
+    isbn:String(d.isbn||""),
+    image:String(d.cover||""),
+    description:[d.publication_date,d.variant_name].filter(Boolean).join(" • "),
+    value:0,priceSource:"Not priced",priceNote:"GCD metadata verified. Market value has not been estimated."
   };
 }
-async function openLibraryIsbn(isbn){
-  const r=await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(isbn)}&jscmd=data&format=json`,{headers:{"Accept":"application/json","User-Agent":"CardVault/3.3.0"}});
-  if(!r.ok)return null;const d=await r.json(),b=d[`ISBN:${isbn}`];if(!b)return null;
-  return {
-    id:`isbn-${isbn}`,title:String(b.title||"Unknown Comic"),series:String(b.title||""),
-    issueNumber:"",publisher:String(b.publishers?.[0]?.name||""),year:String(b.publish_date||""),
-    upc:"",supplement:"",isbn,image:String(b.cover?.large||b.cover?.medium||b.cover?.small||""),
-    description:"Collected edition / graphic novel",value:0,priceSource:"Open Library"
-  }
+async function gcdIssueDetail(apiUrl){
+  return normalizeGcdIssue(await gcdJson(apiUrl));
 }
-app.get("/api/comics/barcode/:code",async(req,res)=>{
+async function searchGcdIssues(title,issue,publisher="",year=""){
+  const t=encodeURIComponent(String(title).trim()),n=encodeURIComponent(String(issue).trim());
+  let url=`https://www.comics.org/api/series/name/${t}/issue/${n}/`;
+  if(year)url=`https://www.comics.org/api/series/name/${t}/issue/${n}/year/${encodeURIComponent(year)}/`;
+  const listing=await gcdJson(url);
+  let rows=Array.isArray(listing.results)?listing.results:[];
+  if(publisher){
+    const p=publisher.toLowerCase();
+    // Listing doesn't always contain publisher, so don't hard-filter yet.
+  }
+  rows=rows.slice(0,16);
+  const details=(await Promise.all(rows.map(async r=>{try{return await gcdIssueDetail(r.api_url)}catch{return null}}))).filter(Boolean);
+  if(publisher){
+    const p=publisher.toLowerCase();
+    const exact=details.filter(x=>x.publisher.toLowerCase().includes(p));
+    if(exact.length)return exact;
+  }
+  return details;
+}
+app.get("/api/comics/gcd/search",async(req,res)=>{
   try{
-    let code=String(req.params.code||"").replace(/\D/g,""),supplement=String(req.query.supplement||"").replace(/\D/g,"").slice(0,5);
-    if(!/^\d{8,14}$/.test(code))return res.status(400).json({error:"Invalid barcode"});
-    const key=`b:${code}:${supplement}`,cached=comicLookupCache.get(key);if(cached&&Date.now()-cached.savedAt<COMIC_CACHE_MS)return res.json({...cached.data,cached:true});
-    const items=[];
-
-    // ISBN-13/10 first for graphic novels/trades.
-    if(code.length===10||code.startsWith("978")||code.startsWith("979")){
-      const ol=await openLibraryIsbn(code);if(ol)items.push(ol)
-    }
-
-    // UPCitemdb for standard UPC/EAN comic products.
-    if(!items.length){
-      let data;
-      try{data=await upcItemdbJson(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(code)}`)}
-      catch(err){
-        if(code.length===13&&code.startsWith("0")){code=code.slice(1);data=await upcItemdbJson(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(code)}`)}else throw err
-      }
-      const rows=Array.isArray(data.items)?data.items:[];
-      rows.forEach((p,i)=>items.push(normalizeComicProduct(p,{id:`${code}-${supplement||i}`,upc:code,supplement})))
-    }
-    if(!items.length)return res.status(404).json({error:"No comic found for that barcode"});
-    const payload={items,source:items[0]?.isbn?"Open Library":"UPCitemdb",aiUsed:false};comicLookupCache.set(key,{savedAt:Date.now(),data:payload});res.json(payload)
-  }catch(err){console.error("Comic barcode:",err);res.status(err.code||502).json({error:err.message||"Comic barcode lookup failed"})}
+    const title=String(req.query.title||"").trim().slice(0,100),issue=String(req.query.issue||"").trim().slice(0,30),publisher=String(req.query.publisher||"").trim().slice(0,60),year=String(req.query.year||"").trim().slice(0,4);
+    if(title.length<2||!issue)return res.status(400).json({error:"Title and issue number are required."});
+    const key=`gcd:${title}:${issue}:${publisher}:${year}`.toLowerCase(),cached=comicLookupCache.get(key);if(cached&&Date.now()-cached.savedAt<COMIC_CACHE_MS)return res.json({...cached.data,cached:true});
+    const items=await searchGcdIssues(title,issue,publisher,year);const payload={items,source:"Grand Comics Database",aiUsed:false};comicLookupCache.set(key,{savedAt:Date.now(),data:payload});res.json(payload)
+  }catch(err){console.error("GCD search:",err);res.status(err.code||502).json({error:err.message||"GCD search failed"})}
 });
-app.get("/api/comics/search",async(req,res)=>{
+app.get("/api/comics/gcd/barcode",async(req,res)=>{
   try{
-    const title=String(req.query.title||"").trim().slice(0,100),issue=String(req.query.issue||"").trim().slice(0,20),publisher=String(req.query.publisher||"").trim().slice(0,60);
-    if(title.length<2)return res.status(400).json({error:"Search is too short"});
-    const phrase=[title,issue?`#${issue}`:"",publisher,"comic"].filter(Boolean).join(" ");
-    const key=`s:${phrase.toLowerCase()}`,cached=comicLookupCache.get(key);if(cached&&Date.now()-cached.savedAt<COMIC_CACHE_MS)return res.json({...cached.data,cached:true});
-    const data=await upcItemdbJson(`https://api.upcitemdb.com/prod/trial/search?s=${encodeURIComponent(phrase)}&type=product&match_mode=0`);
-    const rows=Array.isArray(data.items)?data.items:[];
-    const items=rows.slice(0,10).map((p,i)=>normalizeComicProduct(p,{id:`search-${p.upc||i}`,issueNumber:issue,publisher:publisher||p.brand||""}));
-    const payload={items,source:"UPCitemdb",aiUsed:false};comicLookupCache.set(key,{savedAt:Date.now(),data:payload});res.json(payload)
-  }catch(err){console.error("Comic search:",err);res.status(err.code||502).json({error:err.message||"Comic search failed"})}
+    const barcode=String(req.query.barcode||"").replace(/\D/g,""),supp=String(req.query.supplement||"").replace(/\D/g,"").slice(0,5);
+    if(barcode.length<8)return res.status(400).json({error:"Invalid barcode"});
+    // GCD currently documents title/issue searches, not a public barcode-search endpoint.
+    // We therefore use generic product lookup only to obtain title text, then verify
+    // every candidate against GCD's own barcode field before returning it.
+    let productData;
+    try{productData=await upcItemdbJson(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`)}catch{productData=null}
+    const p=productData?.items?.[0];
+    if(!p)return res.status(404).json({error:"Barcode captured, but no safe comic match was found. Take a cover photo instead."});
+    const title=String(p.title||"").replace(/\b(comic|book|variant|cover)\b/ig," ").replace(/\s+/g," ").trim();
+    const issue=String(p.title||"").match(/(?:#|Issue\s*)([0-9A-Za-z.\-]+)/i)?.[1]||"";
+    if(!title||!issue)return res.status(404).json({error:"Barcode captured, but it did not provide enough comic identity. Take a cover photo instead."});
+    const candidates=await searchGcdIssues(title,issue,String(p.brand||""));
+    const full=barcode+supp;
+    const verified=candidates.filter(c=>{
+      const cfull=(c.upc||"")+(c.supplement||"");
+      return cfull===full||(!supp&&c.upc===barcode);
+    });
+    if(!verified.length)return res.status(404).json({error:"Barcode captured, but GCD could not verify an exact issue. Take a cover photo instead."});
+    res.json({items:verified,source:"Grand Comics Database",aiUsed:false})
+  }catch(err){console.error("Comic barcode verify:",err);res.status(err.code||502).json({error:err.message||"Barcode verification failed"})}
+});
+app.post("/api/comics/identify-cover",scanRateLimit,async(req,res)=>{
+  try{
+    const image=parseDataUrl(req.body?.image);if(!image)return res.status(400).json({error:"Choose a JPG, PNG, or WebP comic cover photo."});
+    if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Cover identification is not configured. Use title + issue search instead."});
+    const model=String(process.env.GEMINI_SCAN_MODELS||"gemini-3.1-flash-lite,gemini-2.5-flash").split(",")[0].trim();
+    const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const prompt=`Read this physical comic-book FRONT COVER. Return ONLY JSON:
+{"title":"series title","issueNumber":"issue number only","publisher":"publisher if visible/known","year":"4 digit year if reasonably identifiable","variantClues":"short visible cover/variant clues","printing":"printing if visibly stated"}
+Do not invent an issue number. Use empty strings for unknown fields. Focus on the publication identity, not story text.`;
+    const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt},{inlineData:{mimeType:image.mimeType,data:image.data}}]}],generationConfig:{responseMimeType:"application/json",temperature:.05,maxOutputTokens:500}})});
+    const d=await r.json();if(r.status===429)return res.status(429).json({error:"Free AI quota is temporarily exhausted. Use title + issue search instead."});if(!r.ok)return res.status(502).json({error:"Cover reader could not run."});
+    let text=d?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";text=text.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();const detected=JSON.parse(text);
+    if(!detected.title||!detected.issueNumber)return res.status(422).json({error:"I could not confidently read the title and issue number. Try a clearer photo or manual search."});
+    let items=await searchGcdIssues(detected.title,detected.issueNumber,detected.publisher,detected.year);
+    const clues=String(detected.variantClues||"").toLowerCase();
+    if(clues&&items.length>1)items=items.sort((a,b)=>{const as=(a.variant+" "+a.coverArtist).toLowerCase(),bs=(b.variant+" "+b.coverArtist).toLowerCase();const aw=clues.split(/\s+/).filter(w=>w.length>3&&as.includes(w)).length,bw=clues.split(/\s+/).filter(w=>w.length>3&&bs.includes(w)).length;return bw-aw});
+    res.json({detected,items:items.slice(0,12),source:"Gemini + Grand Comics Database"})
+  }catch(err){console.error("Comic cover identify:",err);res.status(500).json({error:"Comic cover identification failed."})}
+});
+app.post("/api/comics/price",async(req,res)=>{
+  try{
+    const {title="",issueNumber="",publisher="",year="",variant="",printing="",grade="Raw"}=req.body||{};
+    if(!title||!issueNumber)return res.status(400).json({error:"Missing comic identity"});
+    if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Live market pricing is not configured."});
+    const key=`comic|${title}|${issueNumber}|${publisher}|${year}|${variant}|${printing}|${grade}`.toLowerCase(),cached=priceMemoryCache.get(key);if(cached&&Date.now()-cached.savedAt<24*60*60*1000)return res.json({...cached.data,cached:true});
+    const model=process.env.GEMINI_MODEL||"gemini-3.1-flash-lite",endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const prompt=`You are Card Vault's OPTIONAL live comic-market estimator.
+Search the live web for the exact comic issue and the closest legitimate comparables.
+Title: ${title}
+Issue: #${issueNumber}
+Publisher: ${publisher}
+Year: ${year}
+Variant/Cover: ${variant}
+Printing: ${printing}
+Grade/condition: ${grade}
+Prefer recent sold evidence when available. Do not use original cover price as market value. Do not mix different variants, printings, facsimiles, lots, slabs, or grades. If only asking prices exist, lower confidence. Never invent sales.
+Return ONLY JSON:
+{"value":25.00,"low":18.00,"high":32.00,"confidence":"High|Medium|Low","note":"short basis","comparablesUsed":4}`;
+    const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt}]}],tools:[{google_search:{}}],generationConfig:{temperature:.1}})});
+    const d=await r.json();if(r.status===429)return res.status(429).json({error:"Live market pricing is cooling down. Enter a value manually or try later."});if(!r.ok)return res.status(502).json({error:"Live market refresh could not run."});
+    let text=d?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";text=text.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();const m=text.match(/\{[\s\S]*\}/);if(!m)return res.status(502).json({error:"Market refresh returned an unreadable result."});const p=JSON.parse(m[0]);
+    const value=Number(p.value),low=Number(p.low),high=Number(p.high);if(![value,low,high].every(Number.isFinite))return res.status(502).json({error:"Market refresh returned invalid numbers."});
+    const result={value:Math.round(value*100)/100,low:Math.round(Math.min(low,high)*100)/100,high:Math.round(Math.max(low,high)*100)/100,confidence:["High","Medium","Low"].includes(p.confidence)?p.confidence:"Low",note:String(p.note||"Live web-comparable estimate.").slice(0,220),source:"Live AI market estimate"};
+    priceMemoryCache.set(key,{savedAt:Date.now(),data:result});res.json(result)
+  }catch(err){console.error("Comic price:",err);res.status(500).json({error:"Comic market refresh failed."})}
 });
 
 const funkoLookupCache=new Map();
@@ -695,5 +761,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v3.3.0 running on port ${port}`);
+  console.log(`Card Vault v3.3.1 running on port ${port}`);
 });

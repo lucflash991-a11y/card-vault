@@ -1,10 +1,10 @@
-# Card Vault v3.3.0 — Comics Barcode Vault
+# Card Vault v3.3.1 — Comic Scanner Rebuild
 
 Card Vault started as a sports-card scanner and collection tracker. v3.0 begins the transition into a **multi-collectible platform** while keeping every collectible category separated.
 
 ## Current Build
 
-**v3.3.0**
+**v3.3.1**
 
 Built from the stable **v2.4.2 Trade / Sale Flow Hotfix** baseline.
 
@@ -684,7 +684,7 @@ v3.0.0 does **not** require new Firestore rules beyond the rules already used by
 After deploying v3.0.2, verify:
 
 ```text
-BUILD v3.3.0
+BUILD v3.3.1
 ```
 
 in Card Vault.
@@ -765,3 +765,52 @@ Comic schema includes:
 ### Important
 v3.3.0 is barcode-first. It does not use Gemini for the normal Comic workflow.
 A later Comic update can add cover-photo AI as the fallback for older comics or missing database records.
+
+
+## v3.3.1 — Comic Scanner Rebuild
+
+Rebuilt Comics after v3.3.0 proved that generic UPC product data was not accurate enough for individual comic issues and variants.
+
+### Cover-photo first
+- Take or upload the front cover.
+- Card Vault uses one Gemini call to read visible title / issue / publisher / year / variant clues.
+- The result is then verified against the Grand Comics Database.
+- Users choose the exact GCD result instead of Card Vault automatically saving a guessed comic.
+
+### Real comic cover images
+Search results and saved comics use the cover URL returned by the Grand Comics Database.
+
+### GCD metadata
+Saved comics can include:
+- GCD issue ID
+- real cover image
+- series/title
+- issue number
+- publisher
+- publication year
+- variant cover
+- printing
+- cover artist
+- barcode + 5-digit supplement
+- ISBN
+
+### Safer barcode behavior
+Barcode is now a verification/fallback path, not the source of truth.
+- scanned barcode is cleared after every lookup
+- supplement is cleared after every lookup
+- only GCD-verified barcode matches are returned
+- if an exact barcode cannot be verified, Card Vault tells the user to use a cover photo rather than returning a random product
+
+### Better values
+Generic UPC/product prices are no longer used as comic market values.
+New comics start as `Not priced`.
+
+Users can:
+- enter a value manually
+- optionally tap Refresh Market Value
+
+Live refresh uses Card Vault's existing Gemini + web-search approach and tries to match the exact issue, variant, printing and grade. It is never automatic.
+
+### Manual GCD search
+Title + issue number searches the Grand Comics Database directly and uses zero Gemini calls.
+

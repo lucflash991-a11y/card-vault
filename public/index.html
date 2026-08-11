@@ -291,8 +291,18 @@
       </section>
 
       <section id="comicScan" class="comic-screen">
-        <div class="comic-page-title"><small>BARCODE FIRST</small><h1>Scan the comic.</h1><p>For modern comics, scan the UPC/EAN on the cover. ISBN also works well for collected editions and graphic novels.</p></div>
+        <div class="comic-page-title"><small>COVER FIRST</small><h1>Identify the comic.</h1><p>Take a clear picture of the front cover. Card Vault reads the visible title/issue clues, then verifies them against the Grand Comics Database so you can choose the exact real cover.</p></div>
 
+        <section class="comic-cover-scan">
+          <label id="comicCoverLabel" class="comic-cover-drop">
+            <input id="comicCoverInput" type="file" accept="image/*" capture="environment">
+            <div id="comicCoverPreview" class="comic-cover-preview"><span>＋</span><strong>Take / choose cover photo</strong><p>Front cover only. Keep the title and issue number visible.</p></div>
+          </label>
+          <button id="comicAnalyzeCoverBtn" class="comic-primary wide" type="button" disabled>Identify Cover</button>
+          <p class="comic-cover-note">Cover identification uses one Gemini request only when you tap Identify. GCD provides the real issue metadata and cover images.</p>
+        </section>
+
+        <div class="comic-divider"><span>BARCODE VERIFICATION / FALLBACK</span></div>
         <div class="comic-scanner-card">
           <div id="comicHtml5Reader" class="comic-reader"></div>
           <div id="comicScannerPlaceholder" class="comic-scanner-placeholder">
@@ -309,20 +319,20 @@
         <form id="comicBarcodeForm" class="comic-form">
           <label>UPC / EAN / ISBN<input id="comicBarcodeInput" inputmode="numeric" autocomplete="off" placeholder="Enter barcode"></label>
           <label>5-digit comic supplement <span class="comic-optional">optional</span><input id="comicSupplementInput" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="e.g. 01511"></label>
-          <button class="comic-primary wide" type="submit">Look Up Comic</button>
+          <button class="comic-primary wide" type="submit">Search / Verify Barcode</button>
         </form>
 
-        <div class="comic-divider"><span>OR SEARCH MANUALLY</span></div>
+        <div class="comic-divider"><span>SEARCH GCD MANUALLY</span></div>
         <form id="comicSearchForm" class="comic-form">
           <label>Comic title<input id="comicSearchTitle" type="search" autocomplete="off" placeholder="e.g. Amazing Spider-Man"></label>
           <div class="comic-search-row">
-            <label>Issue #<input id="comicSearchIssue" type="text" autocomplete="off" placeholder="e.g. 26"></label>
+            <label>Issue #<input id="comicSearchIssue" type="text" autocomplete="off" placeholder="e.g. 26" required></label>
             <label>Publisher <span class="comic-optional">optional</span><input id="comicSearchPublisher" type="text" autocomplete="off" placeholder="e.g. Marvel"></label>
           </div>
-          <button class="comic-secondary wide" type="submit">Search Comics</button>
+          <button class="comic-secondary wide" type="submit">Search Grand Comics Database</button>
         </form>
 
-        <div class="comic-api-note"><strong>0 AI calls</strong><span>Barcode/title lookup does not use Gemini.</span></div>
+        <div class="comic-api-note"><strong>GCD VERIFIED</strong><span>Manual title/issue search and barcode verification use the Grand Comics Database. Cover-photo identification uses Gemini only to read the cover.</span></div>
         <div id="comicLookupStatus" class="comic-status"></div>
         <div id="comicResults" class="comic-results"></div>
       </section>
@@ -952,7 +962,7 @@
         </div>
 
         <p class="settings-footnote">Platform features live in Discover. Your Home stays personal and clean.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.3.0</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.3.1</p>
       </section>
     </main>
 
@@ -1032,6 +1042,6 @@
 <div id="toast" class="toast hidden" aria-live="polite"></div>
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <script type="module" src="/app.js?v=330"></script>
+  <script type="module" src="/app.js?v=331"></script>
 </body>
 </html>
