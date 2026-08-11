@@ -1,10 +1,10 @@
-# Card Vault v3.0.0 — Multi-Collectible Vault Foundation
+# Card Vault v3.0.1 — Pokémon API Vault
 
 Card Vault started as a sports-card scanner and collection tracker. v3.0 begins the transition into a **multi-collectible platform** while keeping every collectible category separated.
 
 ## Current Build
 
-**v3.0.0**
+**v3.0.1**
 
 Built from the stable **v2.4.2 Trade / Sale Flow Hotfix** baseline.
 
@@ -510,6 +510,87 @@ This release builds the architecture first so the stable Sports Card app is not 
 
 ---
 
+
+## v3.0.1 — Pokémon API Vault
+
+Pokémon is now the second fully active Card Vault category.
+
+### TCGdex Integration
+
+Card Vault now uses the TCGdex REST API as the primary Pokémon catalog.
+
+Normal Pokémon database searches use:
+
+**0 Gemini calls.**
+
+No TCGdex API key is required.
+
+Search supports:
+
+- Pokémon/card name
+- collector/card number
+- optional set name
+
+Card Vault fetches exact card details from TCGdex and can save:
+
+- official card name
+- collector number
+- set
+- rarity
+- card category
+- illustrator
+- HP
+- Pokémon types
+- stage
+- variants
+- card image
+- TCGdex ID
+- available TCGPlayer market pricing exposed through TCGdex
+
+### Pokémon Home
+
+Pokémon now has its own Home dashboard with:
+
+- Pokémon collection value
+- card count
+- set count
+- average value
+- recent cards
+- top Pokémon
+- top sets
+
+### Pokémon Vault
+
+Pokémon cards are stored separately from Sports Cards.
+
+Signed-in users sync through:
+
+```text
+users/{uid}/pokemonCards/{cardId}
+```
+
+Guest users use their own local Pokémon storage.
+
+### Pokémon Navigation
+
+Pokémon has its own:
+
+- Home
+- Add / API Search
+- Vault
+- Discover foundation
+
+Pokémon Discover is category-isolated but public Pokémon Market/social publishing is intentionally reserved for a later 3.0.x pass.
+
+### Sports Safety
+
+The Sports app was not converted to TCGdex and its Gemini scanner path was not changed.
+
+### Free-First Design
+
+TCGdex is used before any future AI fallback. The v3.0.1 Pokémon lookup itself does not call Gemini.
+
+
 # Current Core Features
 
 ## Sports Scanner
@@ -594,10 +675,10 @@ firestore.rules
 
 v3.0.0 does **not** require new Firestore rules beyond the rules already used by v2.4.2.
 
-After deploying v3.0.0, verify:
+After deploying v3.0.1, verify:
 
 ```text
-BUILD v3.0.0
+BUILD v3.0.1
 ```
 
 in Card Vault.

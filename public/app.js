@@ -452,7 +452,7 @@ let activeVaultCategory="sports";
 function vaultMeta(category){
   return {
     sports:{name:"Sports Cards",short:"Sports",code:"SC",live:true},
-    pokemon:{name:"Pokémon",short:"Pokémon",code:"PK",live:false,release:"v3.0.1",text:"Pokémon gets its own scanner fields, Home analytics, Vault, Discover and Market."},
+    pokemon:{name:"Pokémon",short:"Pokémon",code:"PK",live:true},
     comics:{name:"Comics",short:"Comics",code:"CM",live:false,release:"v3.0.3",text:"Comics will use barcode-first identification when possible, with cover AI only as a fallback."},
     funko:{name:"Funko",short:"Funko",code:"FN",live:false,release:"v3.0.2",text:"Funko gets its own Pop number, franchise, exclusive/chase, condition and value tracking."}
   }[category]||null;
@@ -460,6 +460,7 @@ function vaultMeta(category){
 function showVaultSelector(){
   $("authGate")?.classList.add("hidden");
   $("appShell")?.classList.add("hidden");
+  $("pokemonShell")?.classList.add("hidden");
   $("vaultGate")?.classList.remove("hidden");
   $("vaultComingSoon")?.classList.add("hidden");
 }
@@ -476,20 +477,190 @@ function enterVault(category){
   activeVaultCategory=category;
   localStorage.setItem(ACTIVE_VAULT_KEY,category);
   $("vaultGate")?.classList.add("hidden");
-  showApp();
+  if(category==="pokemon") showPokemonApp();
+  else showApp();
 }
 document.querySelectorAll("[data-vault-choice]").forEach(b=>b.addEventListener("click",()=>enterVault(b.dataset.vaultChoice)));
 $("vaultComingSoonClose")?.addEventListener("click",()=>$("vaultComingSoon")?.classList.add("hidden"));
 $("switchVaultBtn")?.addEventListener("click",showVaultSelector);
 
+
+const POKEMON_LOCAL_KEY="cardvault.pokemon.v301.cards";
+let pokemonCards=[];
+let pokemonCloudUnsub=null;
+let pokemonCurrentDetailId=null;
+
+function pokemonImage(url){
+  if(!url)return "/icons/card-placeholder.svg";
+  if(/\.(png|webp|jpg|jpeg)(\?|$)/i.test(url))return url;
+  return `${url}/high.webp`;
+}
+function normalizePokemonCard(c){
+  return {
+    id:String(c.id||uid()),
+    category:"pokemon",
+    tcgdexId:String(c.tcgdexId||c.id||""),
+    name:String(c.name||"Unknown Pokémon card"),
+    localId:String(c.localId||c.number||""),
+    setId:String(c.setId||c.set?.id||""),
+    setName:String(c.setName||c.set?.name||""),
+    rarity:String(c.rarity||""),
+    cardType:String(c.cardType||c.apiCategory||""),
+    illustrator:String(c.illustrator||""),
+    hp:Number(c.hp||0),
+    types:Array.isArray(c.types)?c.types.map(String):[],
+    stage:String(c.stage||""),
+    image:String(c.image||""),
+    variants:c.variants&&typeof c.variants==="object"?c.variants:{},
+    value:Number(c.value||0),
+    priceLow:Number(c.priceLow||0),
+    priceHigh:Number(c.priceHigh||0),
+    priceSource:String(c.priceSource||"TCGdex"),
+    pricingUpdatedAt:Number(c.pricingUpdatedAt||0),
+    paid:Number(c.paid||0),
+    notes:String(c.notes||""),
+    createdAt:Number(c.createdAt||Date.now())
+  };
+}
+function readPokemonLocal(){
+  try{
+    const rows=JSON.parse(localStorage.getItem(POKEMON_LOCAL_KEY)||"[]");
+    return Array.isArray(rows)?rows.map(normalizePokemonCard):[];
+  }catch{return []}
+}
+function savePokemonLocal(){try{localStorage.setItem(POKEMON_LOCAL_KEY,JSON.stringify(pokemonCards))}catch{}}
+function pokemonMoney(v){return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(Number(v||0))}
+function pokemonGo(id){
+  document.querySelectorAll(".pokemon-screen").forEach(x=>x.classList.toggle("active",x.id===id));
+  document.querySelectorAll(".pokemon-tab").forEach(x=>x.classList.toggle("active",x.dataset.pokemonGo===id));
+  window.scrollTo({top:0,behavior:"smooth"});
+  if(id==="pokemonHome"||id==="pokemonVault")renderPokemonAll();
+}
+function showPokemonApp(){
+  activeVaultCategory="pokemon";
+  $("authGate")?.classList.add("hidden");
+  $("vaultGate")?.classList.add("hidden");
+  $("appShell")?.classList.add("hidden");
+  $("pokemonShell")?.classList.remove("hidden");
+  pokemonCards=readPokemonLocal();
+  startPokemonCloud().catch(err=>console.warn("Pokémon cloud:",err));
+  renderPokemonAll();
+  pokemonGo("pokemonHome");
+}
+async function startPokemonCloud(){
+  if(pokemonCloudUnsub){pokemonCloudUnsub();pokemonCloudUnsub=null}
+  if(!currentUser||!firebase?.db)return;
+  const col=firebase.collection(firebase.db,"users",currentUser.uid,"pokemonCards");
+  pokemonCloudUnsub=firebase.onSnapshot(col,snap=>{
+    pokemonCards=snap.docs.map(d=>normalizePokemonCard({id:d.id,...d.data()})).sort((a,b)=>b.createdAt-a.createdAt);
+    savePokemonLocal();renderPokemonAll();
+  },err=>console.warn("Pokémon sync:",err));
+}
+async function savePokemonCard(card){
+  const p=normalizePokemonCard(card);
+  const existing=pokemonCards.findIndex(x=>x.id===p.id||x.tcgdexId===p.tcgdexId);
+  if(existing>=0)pokemonCards[existing]={...pokemonCards[existing],...p};
+  else pokemonCards.unshift(p);
+  savePokemonLocal();renderPokemonAll();
+  if(currentUser&&firebase?.db){
+    const docId=(p.tcgdexId||p.id).replace(/[^a-zA-Z0-9._-]/g,"_");
+    await firebase.setDoc(firebase.doc(firebase.db,"users",currentUser.uid,"pokemonCards",docId),p,{merge:true});
+  }
+}
+async function deletePokemonCard(id){
+  const p=pokemonCards.find(x=>x.id===id);if(!p)return;
+  pokemonCards=pokemonCards.filter(x=>x.id!==id);savePokemonLocal();renderPokemonAll();
+  if(currentUser&&firebase?.db){
+    const docId=(p.tcgdexId||p.id).replace(/[^a-zA-Z0-9._-]/g,"_");
+    await firebase.deleteDoc(firebase.doc(firebase.db,"users",currentUser.uid,"pokemonCards",docId));
+  }
+  pokemonGo("pokemonVault");toast("Pokémon card removed");
+}
+function countPokemon(rows,key){
+  const map=new Map();
+  rows.forEach(c=>{const v=String(c[key]||"").trim();if(v)map.set(v,(map.get(v)||0)+1)});
+  return [...map.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+}
+function pokemonCardMarkup(c){
+  return `<button class="pokemon-card-item" data-pokemon-card="${esc(c.id)}" type="button"><img src="${esc(pokemonImage(c.image))}" alt=""><strong>${esc(c.name)}</strong><span>${esc(c.setName)} • #${esc(c.localId)}</span><span>${pokemonMoney(c.value)}</span></button>`;
+}
+function renderPokemonAll(){
+  const total=pokemonCards.reduce((s,c)=>s+Number(c.value||0),0);
+  if($("pokemonTotalValue"))$("pokemonTotalValue").textContent=pokemonMoney(total);
+  if($("pokemonCardCount"))$("pokemonCardCount").textContent=pokemonCards.length;
+  if($("pokemonSetCount"))$("pokemonSetCount").textContent=new Set(pokemonCards.map(c=>c.setId||c.setName).filter(Boolean)).size;
+  if($("pokemonAverageValue"))$("pokemonAverageValue").textContent=pokemonMoney(pokemonCards.length?total/pokemonCards.length:0);
+
+  const recent=pokemonCards.slice().sort((a,b)=>b.createdAt-a.createdAt).slice(0,6);
+  if($("pokemonRecent"))$("pokemonRecent").innerHTML=recent.map(pokemonCardMarkup).join("");
+  $("pokemonRecentEmpty")?.classList.toggle("hidden",recent.length>0);
+
+  const names=countPokemon(pokemonCards,"name").slice(0,6);
+  if($("pokemonTopNames"))$("pokemonTopNames").innerHTML=names.map(([n,c],i)=>`<div class="pokemon-rank-row"><strong>${i+1}. ${esc(n)}</strong><span>${c} card${c===1?"":"s"}</span></div>`).join("")||'<p class="pokemon-empty">No data yet.</p>';
+  const sets=countPokemon(pokemonCards,"setName").slice(0,6);
+  if($("pokemonTopSets"))$("pokemonTopSets").innerHTML=sets.map(([n,c],i)=>`<div class="pokemon-rank-row"><strong>${i+1}. ${esc(n)}</strong><span>${c} card${c===1?"":"s"}</span></div>`).join("")||'<p class="pokemon-empty">No data yet.</p>';
+  renderPokemonVault();
+  bindPokemonCards();
+}
+function renderPokemonVault(){
+  const el=$("pokemonVaultGrid");if(!el)return;
+  const q=String($("pokemonVaultSearch")?.value||"").trim().toLowerCase(),sort=$("pokemonVaultSort")?.value||"newest";
+  let rows=pokemonCards.filter(c=>[c.name,c.setName,c.rarity,c.localId].join(" ").toLowerCase().includes(q));
+  if(sort==="value-high")rows.sort((a,b)=>b.value-a.value);else if(sort==="name")rows.sort((a,b)=>a.name.localeCompare(b.name));else rows.sort((a,b)=>b.createdAt-a.createdAt);
+  el.innerHTML=rows.map(pokemonCardMarkup).join("");
+  $("pokemonVaultEmpty")?.classList.toggle("hidden",rows.length>0);
+  bindPokemonCards();
+}
+function bindPokemonCards(){
+  document.querySelectorAll("[data-pokemon-card]").forEach(b=>b.onclick=()=>openPokemonDetail(b.dataset.pokemonCard));
+}
+function openPokemonDetail(id){
+  const c=pokemonCards.find(x=>x.id===id);if(!c)return;pokemonCurrentDetailId=id;
+  const variants=Object.entries(c.variants||{}).filter(([,v])=>v===true).map(([k])=>k.replace(/([A-Z])/g," $1")).join(", ")||"—";
+  $("pokemonDetailContent").innerHTML=`<div class="pokemon-detail-card"><img src="${esc(pokemonImage(c.image))}" alt=""><div class="pokemon-detail-meta"><small>${esc(c.setName)} • #${esc(c.localId)}</small><h1>${esc(c.name)}</h1><p>${esc(c.rarity||c.cardType||"Pokémon TCG card")}</p><div class="pokemon-detail-list"><div><span>MARKET VALUE</span><strong>${pokemonMoney(c.value)}</strong></div><div><span>PRICE SOURCE</span><strong>${esc(c.priceSource||"TCGdex")}</strong></div><div><span>RARITY</span><strong>${esc(c.rarity||"—")}</strong></div><div><span>TYPE</span><strong>${esc(c.types.join(", ")||c.cardType||"—")}</strong></div><div><span>HP</span><strong>${c.hp||"—"}</strong></div><div><span>ARTIST</span><strong>${esc(c.illustrator||"—")}</strong></div><div><span>VARIANTS</span><strong>${esc(variants)}</strong></div><div><span>TCGDEX ID</span><strong>${esc(c.tcgdexId)}</strong></div></div><button id="pokemonDeleteCurrent" class="pokemon-delete" type="button">Remove from Pokémon Vault</button></div></div>`;
+  $("pokemonDeleteCurrent").onclick=()=>{if(confirm("Remove this Pokémon card from your Vault?"))deletePokemonCard(c.id).catch(()=>toast("Could not remove card"))};
+  pokemonGo("pokemonCardDetail");
+}
+async function searchPokemonApi(){
+  const name=$("pokemonSearchName").value.trim(),number=$("pokemonSearchNumber").value.trim(),set=$("pokemonSearchSet").value.trim();
+  if(!name&&!number){toast("Enter a card name or number");return}
+  $("pokemonSearchBtn").disabled=true;$("pokemonSearchBtn").textContent="Searching…";
+  $("pokemonSearchStatus").textContent="Searching TCGdex…";$("pokemonSearchResults").innerHTML="";
+  try{
+    const params=new URLSearchParams();if(name)params.set("name",name);if(number)params.set("number",number);if(set)params.set("set",set);
+    const r=await fetch(`/api/pokemon/search?${params}`);
+    const data=await r.json();if(!r.ok)throw new Error(data.error||"Search failed");
+    const rows=Array.isArray(data.cards)?data.cards:[];
+    $("pokemonSearchStatus").textContent=rows.length?`${rows.length} match${rows.length===1?"":"es"} found • TCGdex • 0 AI calls`:"No matches found. Try less information or check the card number.";
+    $("pokemonSearchResults").innerHTML=rows.map((c,i)=>`<article class="pokemon-result"><img src="${esc(pokemonImage(c.image))}" alt=""><div><small>${esc(c.setName)} • #${esc(c.localId)}</small><strong>${esc(c.name)}</strong><span>${esc(c.rarity||c.cardType||"Pokémon TCG")} ${c.value?`• ${pokemonMoney(c.value)}`:""}</span><span>${esc(c.variantsText||"")}</span></div><button data-add-pokemon="${i}" type="button">${pokemonCards.some(x=>x.tcgdexId===c.tcgdexId)?"Saved":"Add"}</button></article>`).join("");
+    document.querySelectorAll("[data-add-pokemon]").forEach(b=>b.onclick=async()=>{
+      const c=rows[Number(b.dataset.addPokemon)];if(!c)return;
+      await savePokemonCard({...c,id:c.tcgdexId,createdAt:Date.now()});
+      b.textContent="Saved";toast(`${c.name} added`);
+    });
+  }catch(err){
+    console.warn(err);$("pokemonSearchStatus").textContent="Could not reach the Pokémon database. Try again in a moment.";
+  }finally{$("pokemonSearchBtn").disabled=false;$("pokemonSearchBtn").textContent="Search TCGdex"}
+}
+
+document.querySelectorAll("[data-pokemon-go]").forEach(b=>b.addEventListener("click",()=>pokemonGo(b.dataset.pokemonGo)));
+$("pokemonBackVaults")?.addEventListener("click",showVaultSelector);
+$("pokemonProfileShortcut")?.addEventListener("click",()=>{showApp();go("profile")});
+$("pokemonSearchForm")?.addEventListener("submit",e=>{e.preventDefault();searchPokemonApi()});
+$("pokemonVaultSearch")?.addEventListener("input",renderPokemonVault);
+$("pokemonVaultSort")?.addEventListener("change",renderPokemonVault);
+$("pokemonDetailBack")?.addEventListener("click",()=>pokemonGo("pokemonVault"));
+
 function showAuthGate(){
   $("authGate").classList.remove("hidden");
   $("vaultGate")?.classList.add("hidden");
+  $("pokemonShell")?.classList.add("hidden");
   $("appShell").classList.add("hidden");
 }
 function showApp(){
   $("authGate").classList.add("hidden");
   $("vaultGate")?.classList.add("hidden");
+  $("pokemonShell")?.classList.add("hidden");
   $("appShell").classList.remove("hidden");
   activeVaultCategory="sports";
   const meta=vaultMeta(activeVaultCategory);

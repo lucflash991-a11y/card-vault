@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"3.0.0"});
+  res.json({version:"3.0.1"});
 });
 
 app.use((req,res,next)=>{
@@ -143,6 +143,109 @@ function getFirebaseConfig(){
   if(!raw)return null;
   try{return JSON.parse(raw)}catch{return null}
 }
+
+
+const pokemonSearchCache=new Map();
+const POKEMON_CACHE_MS=6*60*60*1000;
+
+function pokemonImageUrl(raw){
+  if(!raw)return "";
+  if(/\.(png|webp|jpg|jpeg)(\?|$)/i.test(raw))return raw;
+  return `${raw}/high.webp`;
+}
+function tcgPlayerVariantPrice(tcg={}){
+  const candidates=[];
+  for(const [variant,data] of Object.entries(tcg||{})){
+    if(!data||typeof data!=="object")continue;
+    const market=Number(data.marketPrice);
+    const mid=Number(data.midPrice);
+    const low=Number(data.lowPrice);
+    const high=Number(data.highPrice);
+    if(Number.isFinite(market)&&market>0)candidates.push({variant,value:market,low:Number.isFinite(low)?low:market,high:Number.isFinite(high)?high:market});
+    else if(Number.isFinite(mid)&&mid>0)candidates.push({variant,value:mid,low:Number.isFinite(low)?low:mid,high:Number.isFinite(high)?high:mid});
+  }
+  if(!candidates.length)return null;
+  candidates.sort((a,b)=>a.value-b.value);
+  return candidates[Math.floor(candidates.length/2)];
+}
+function normalizeTcgdexPokemon(c){
+  const usd=c?.pricing?.tcgplayer?.unit==="USD"?tcgPlayerVariantPrice(c.pricing.tcgplayer):null;
+  const variantNames=Object.entries(c?.variants||{}).filter(([,v])=>v===true).map(([k])=>k.replace(/([A-Z])/g," $1").trim());
+  return {
+    tcgdexId:String(c.id||""),
+    name:String(c.name||"Unknown card"),
+    localId:String(c.localId||""),
+    setId:String(c.set?.id||""),
+    setName:String(c.set?.name||""),
+    rarity:String(c.rarity||""),
+    cardType:String(c.category||""),
+    illustrator:String(c.illustrator||""),
+    hp:Number(c.hp||0),
+    types:Array.isArray(c.types)?c.types:[],
+    stage:String(c.stage||""),
+    image:pokemonImageUrl(c.image),
+    variants:c.variants||{},
+    variantsText:variantNames.join(" • "),
+    value:Number(usd?.value||0),
+    priceLow:Number(usd?.low||0),
+    priceHigh:Number(usd?.high||0),
+    priceSource:usd?`TCGdex / TCGPlayer ${usd.variant}`:"TCGdex",
+    pricingUpdatedAt:Date.now()
+  };
+}
+app.get("/api/pokemon/search",async(req,res)=>{
+  try{
+    const name=String(req.query.name||"").trim().slice(0,80);
+    const number=String(req.query.number||"").trim().replace(/^#/,"").slice(0,30);
+    const setName=String(req.query.set||"").trim().slice(0,80);
+    if(!name&&!number)return res.status(400).json({error:"Enter a Pokémon/card name or card number."});
+
+    const cacheKey=[name,number,setName].map(x=>x.toLowerCase()).join("|");
+    const cached=pokemonSearchCache.get(cacheKey);
+    if(cached&&Date.now()-cached.savedAt<POKEMON_CACHE_MS)return res.json({...cached.data,cached:true});
+
+    const params=new URLSearchParams();
+    if(name)params.set("name",name);
+    if(number)params.set("localId",number);
+    params.set("pagination:page","1");
+    params.set("pagination:itemsPerPage","30");
+
+    let listResponse=await fetch(`https://api.tcgdex.net/v2/en/cards?${params.toString()}`,{headers:{"Accept":"application/json","User-Agent":"CardVault/3.0.1"}});
+    if(!listResponse.ok&&number){
+      // Some deployments may not accept localId filtering on the list endpoint.
+      const fallback=new URLSearchParams();
+      if(name)fallback.set("name",name);
+      fallback.set("pagination:page","1");fallback.set("pagination:itemsPerPage","60");
+      listResponse=await fetch(`https://api.tcgdex.net/v2/en/cards?${fallback.toString()}`,{headers:{"Accept":"application/json","User-Agent":"CardVault/3.0.1"}});
+    }
+    if(!listResponse.ok)return res.status(502).json({error:"TCGdex search is temporarily unavailable."});
+    let briefs=await listResponse.json();
+    if(!Array.isArray(briefs))briefs=[];
+    if(number)briefs=briefs.filter(c=>String(c.localId||"").toLowerCase()===number.toLowerCase());
+    briefs=briefs.slice(0,24);
+
+    const details=(await Promise.all(briefs.map(async b=>{
+      try{
+        const r=await fetch(`https://api.tcgdex.net/v2/en/cards/${encodeURIComponent(b.id)}`,{headers:{"Accept":"application/json","User-Agent":"CardVault/3.0.1"}});
+        if(!r.ok)return null;
+        return await r.json();
+      }catch{return null}
+    }))).filter(Boolean);
+
+    let rows=details;
+    if(setName){
+      const needle=setName.toLowerCase();
+      rows=rows.filter(c=>String(c.set?.name||"").toLowerCase().includes(needle)||String(c.set?.id||"").toLowerCase().includes(needle));
+    }
+    const cards=rows.slice(0,20).map(normalizeTcgdexPokemon);
+    const data={cards,source:"TCGdex",aiUsed:false};
+    pokemonSearchCache.set(cacheKey,{savedAt:Date.now(),data});
+    res.json(data);
+  }catch(err){
+    console.error("Pokemon API search error:",err);
+    res.status(502).json({error:"Could not reach TCGdex."});
+  }
+});
 
 const priceMemoryCache=new Map();
 function priceKey(body){
@@ -360,5 +463,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v3.0.0 running on port ${port}`);
+  console.log(`Card Vault v3.0.1 running on port ${port}`);
 });
