@@ -454,13 +454,14 @@ function vaultMeta(category){
     sports:{name:"Sports Cards",short:"Sports",code:"SC",live:true},
     pokemon:{name:"Pokémon",short:"Pokémon",code:"PK",live:true},
     comics:{name:"Comics",short:"Comics",code:"CM",live:false,release:"v3.0.3",text:"Comics will use barcode-first identification when possible, with cover AI only as a fallback."},
-    funko:{name:"Funko",short:"Funko",code:"FN",live:false,release:"v3.0.2",text:"Funko gets its own Pop number, franchise, exclusive/chase, condition and value tracking."}
+    funko:{name:"Funko",short:"Funko",code:"FN",live:true}
   }[category]||null;
 }
 function showVaultSelector(){
   $("authGate")?.classList.add("hidden");
   $("appShell")?.classList.add("hidden");
   $("pokemonShell")?.classList.add("hidden");
+  $("funkoShell")?.classList.add("hidden");
   $("vaultGate")?.classList.remove("hidden");
   $("vaultComingSoon")?.classList.add("hidden");
 }
@@ -478,6 +479,7 @@ function enterVault(category){
   localStorage.setItem(ACTIVE_VAULT_KEY,category);
   $("vaultGate")?.classList.add("hidden");
   if(category==="pokemon") showPokemonApp();
+  else if(category==="funko") showFunkoApp();
   else showApp();
 }
 document.querySelectorAll("[data-vault-choice]").forEach(b=>b.addEventListener("click",()=>enterVault(b.dataset.vaultChoice)));
@@ -541,6 +543,7 @@ function showPokemonApp(){
   $("authGate")?.classList.add("hidden");
   $("vaultGate")?.classList.add("hidden");
   $("appShell")?.classList.add("hidden");
+  $("funkoShell")?.classList.add("hidden");
   $("pokemonShell")?.classList.remove("hidden");
   pokemonCards=readPokemonLocal();
   startPokemonCloud().catch(err=>console.warn("Pokémon cloud:",err));
@@ -651,16 +654,39 @@ $("pokemonVaultSearch")?.addEventListener("input",renderPokemonVault);
 $("pokemonVaultSort")?.addEventListener("change",renderPokemonVault);
 $("pokemonDetailBack")?.addEventListener("click",()=>pokemonGo("pokemonVault"));
 
+
+const FUNKO_LOCAL_KEY="cardvault.funko.v302.items";let funkoItems=[],funkoCloudUnsub=null,funkoStream=null,funkoScanTimer=null;
+function normalizeFunko(x){const title=String(x.title||x.name||"Unknown Funko"),m=title.match(/#\s?(\d{1,5})\b/i)||title.match(/\bPop!?\s*(?:No\.?\s*)?(\d{1,5})\b/i);return{id:String(x.id||x.upc||uid()),category:"funko",upc:String(x.upc||""),title,brand:String(x.brand||"Funko"),franchise:String(x.franchise||x.category||x.brand||"Funko"),popNumber:String(x.popNumber||m?.[1]||""),image:String(x.image||x.image_url||""),description:String(x.description||""),value:Number(x.value||x.price||0),priceSource:String(x.priceSource||"UPC product data"),exclusive:Boolean(x.exclusive),chase:Boolean(x.chase),vaulted:Boolean(x.vaulted),boxCondition:String(x.boxCondition||""),notes:String(x.notes||""),createdAt:Number(x.createdAt||Date.now())}}
+function readFunkoLocal(){try{const r=JSON.parse(localStorage.getItem(FUNKO_LOCAL_KEY)||"[]");return Array.isArray(r)?r.map(normalizeFunko):[]}catch{return[]}}function saveFunkoLocal(){try{localStorage.setItem(FUNKO_LOCAL_KEY,JSON.stringify(funkoItems))}catch{}}function funkoMoney(v){return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(Number(v||0))}
+function funkoGo(id){document.querySelectorAll(".funko-screen").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".funko-tab").forEach(x=>x.classList.toggle("active",x.dataset.funkoGo===id));if(id!=="funkoScan")stopFunkoScanner();if(id==="funkoHome"||id==="funkoVault")renderFunkoAll();window.scrollTo({top:0,behavior:"smooth"})}
+function showFunkoApp(){activeVaultCategory="funko";$("authGate")?.classList.add("hidden");$("vaultGate")?.classList.add("hidden");$("appShell")?.classList.add("hidden");$("pokemonShell")?.classList.add("hidden");$("funkoShell")?.classList.remove("hidden");funkoItems=readFunkoLocal();startFunkoCloud().catch(console.warn);renderFunkoAll();funkoGo("funkoHome");updateFunkoBarcodeSupport()}
+async function startFunkoCloud(){if(funkoCloudUnsub){funkoCloudUnsub();funkoCloudUnsub=null}if(!currentUser||!firebase?.db)return;const col=firebase.collection(firebase.db,"users",currentUser.uid,"funkoItems");funkoCloudUnsub=firebase.onSnapshot(col,snap=>{funkoItems=snap.docs.map(d=>normalizeFunko({id:d.id,...d.data()})).sort((a,b)=>b.createdAt-a.createdAt);saveFunkoLocal();renderFunkoAll()},err=>console.warn("Funko sync:",err))}
+async function saveFunko(item){const f=normalizeFunko(item),i=funkoItems.findIndex(x=>(f.upc&&x.upc===f.upc)||x.id===f.id);if(i>=0)funkoItems[i]={...funkoItems[i],...f};else funkoItems.unshift(f);saveFunkoLocal();renderFunkoAll();if(currentUser&&firebase?.db){const id=(f.upc||f.id).replace(/[^a-zA-Z0-9._-]/g,"_");await firebase.setDoc(firebase.doc(firebase.db,"users",currentUser.uid,"funkoItems",id),f,{merge:true})}}
+async function deleteFunko(id){const f=funkoItems.find(x=>x.id===id);if(!f)return;funkoItems=funkoItems.filter(x=>x.id!==id);saveFunkoLocal();renderFunkoAll();if(currentUser&&firebase?.db){const d=(f.upc||f.id).replace(/[^a-zA-Z0-9._-]/g,"_");await firebase.deleteDoc(firebase.doc(firebase.db,"users",currentUser.uid,"funkoItems",d))}funkoGo("funkoVault");toast("Funko removed")}
+function funkoItemMarkup(f){return `<button class="funko-item" data-funko-item="${esc(f.id)}" type="button"><img src="${esc(f.image||"/icons/card-placeholder.svg")}" alt=""><strong>${esc(f.title)}</strong><span>${esc(f.franchise)}${f.popNumber?` • #${esc(f.popNumber)}`:""}</span><span>${funkoMoney(f.value)}</span></button>`}
+function renderFunkoAll(){const total=funkoItems.reduce((s,f)=>s+Number(f.value||0),0);$("funkoTotalValue").textContent=funkoMoney(total);$("funkoCount").textContent=funkoItems.length;$("funkoFranchiseCount").textContent=new Set(funkoItems.map(f=>f.franchise).filter(Boolean)).size;$("funkoAverageValue").textContent=funkoMoney(funkoItems.length?total/funkoItems.length:0);const recent=funkoItems.slice().sort((a,b)=>b.createdAt-a.createdAt).slice(0,6);$("funkoRecent").innerHTML=recent.map(funkoItemMarkup).join("");$("funkoRecentEmpty").classList.toggle("hidden",recent.length>0);const m=new Map();funkoItems.forEach(f=>m.set(f.franchise,(m.get(f.franchise)||0)+1));const top=[...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6);$("funkoTopFranchises").innerHTML=top.map(([n,c],i)=>`<div class="funko-rank-row"><strong>${i+1}. ${esc(n)}</strong><span>${c} Pop${c===1?"":"s"}</span></div>`).join("")||'<p class="funko-empty">No data yet.</p>';renderFunkoVault();bindFunkoItems()}
+function renderFunkoVault(){const q=String($("funkoVaultSearch")?.value||"").toLowerCase(),sort=$("funkoVaultSort")?.value||"newest";let rows=funkoItems.filter(f=>[f.title,f.franchise,f.popNumber,f.upc].join(" ").toLowerCase().includes(q));if(sort==="value-high")rows.sort((a,b)=>b.value-a.value);else if(sort==="name")rows.sort((a,b)=>a.title.localeCompare(b.title));else rows.sort((a,b)=>b.createdAt-a.createdAt);$("funkoVaultGrid").innerHTML=rows.map(funkoItemMarkup).join("");$("funkoVaultEmpty").classList.toggle("hidden",rows.length>0);bindFunkoItems()}function bindFunkoItems(){document.querySelectorAll("[data-funko-item]").forEach(b=>b.onclick=()=>openFunkoDetail(b.dataset.funkoItem))}
+function openFunkoDetail(id){const f=funkoItems.find(x=>x.id===id);if(!f)return;$("funkoDetailContent").innerHTML=`<div class="funko-detail-card"><img src="${esc(f.image||"/icons/card-placeholder.svg")}" alt=""><div class="funko-detail-meta"><small>${esc(f.brand||"Funko")}${f.popNumber?` • #${esc(f.popNumber)}`:""}</small><h1>${esc(f.title)}</h1><p>${esc(f.description||f.franchise)}</p><div class="funko-detail-list"><div><span>VALUE</span><strong>${funkoMoney(f.value)}</strong></div><div><span>UPC</span><strong>${esc(f.upc||"—")}</strong></div><div><span>FRANCHISE</span><strong>${esc(f.franchise||"—")}</strong></div><div><span>POP NUMBER</span><strong>${esc(f.popNumber||"—")}</strong></div><div><span>CHASE</span><strong>${f.chase?"Yes":"No / unknown"}</strong></div><div><span>EXCLUSIVE</span><strong>${f.exclusive?"Yes":"No / unknown"}</strong></div></div><button id="funkoDeleteCurrent" class="funko-delete" type="button">Remove from Funko Vault</button></div></div>`;$("funkoDeleteCurrent").onclick=()=>{if(confirm("Remove this Funko from your Vault?"))deleteFunko(f.id).catch(()=>toast("Could not remove Funko"))};funkoGo("funkoDetail")}
+function updateFunkoBarcodeSupport(){if(!$("funkoBarcodeSupport"))return;$("funkoBarcodeSupport").textContent=("BarcodeDetector" in window)?"Camera barcode detection is supported on this browser.":"Camera barcode detection is not available here — enter the UPC manually below."}
+async function startFunkoScanner(){if(!("BarcodeDetector" in window)){toast("Camera barcode detection isn't supported here");return}try{const formats=await BarcodeDetector.getSupportedFormats(),wanted=["upc_a","upc_e","ean_13","ean_8"].filter(x=>formats.includes(x)),detector=new BarcodeDetector({formats:wanted.length?wanted:undefined});funkoStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});const v=$("funkoBarcodeVideo");v.srcObject=funkoStream;await v.play();v.closest(".funko-scanner-card").classList.add("scanning");$("funkoStartScanBtn").classList.add("hidden");$("funkoStopScanBtn").classList.remove("hidden");const tick=async()=>{if(!funkoStream)return;try{const codes=await detector.detect(v),hit=codes.find(c=>/^\d{8,14}$/.test(c.rawValue||""));if(hit){const code=hit.rawValue;stopFunkoScanner();$("funkoBarcodeInput").value=code;await lookupFunkoBarcode(code);return}}catch{}funkoScanTimer=setTimeout(tick,350)};tick()}catch(err){console.warn(err);toast("Could not start camera");stopFunkoScanner()}}
+function stopFunkoScanner(){if(funkoScanTimer){clearTimeout(funkoScanTimer);funkoScanTimer=null}if(funkoStream){funkoStream.getTracks().forEach(t=>t.stop());funkoStream=null}const card=$("funkoBarcodeVideo")?.closest(".funko-scanner-card");card?.classList.remove("scanning");$("funkoStartScanBtn")?.classList.remove("hidden");$("funkoStopScanBtn")?.classList.add("hidden")}
+function renderFunkoResults(rows){$("funkoResults").innerHTML=rows.map((f,i)=>`<article class="funko-result"><img src="${esc(f.image||"/icons/card-placeholder.svg")}" alt=""><div><small>${esc(f.brand||"Funko")}${f.upc?` • ${esc(f.upc)}`:""}</small><strong>${esc(f.title)}</strong><span>${esc(f.franchise||"Funko collectible")}${f.value?` • ${funkoMoney(f.value)}`:""}</span></div><button data-add-funko="${i}" type="button">${funkoItems.some(x=>f.upc&&x.upc===f.upc)?"Saved":"Add"}</button></article>`).join("");document.querySelectorAll("[data-add-funko]").forEach(b=>b.onclick=async()=>{const f=rows[Number(b.dataset.addFunko)];await saveFunko({...f,createdAt:Date.now()});b.textContent="Saved";toast("Funko added")})}
+async function lookupFunkoBarcode(code){code=String(code||"").replace(/\D/g,"");if(code.length<8){toast("Enter a valid UPC/EAN");return}$("funkoLookupStatus").textContent="Looking up barcode…";$("funkoResults").innerHTML="";try{const r=await fetch(`/api/funko/barcode/${encodeURIComponent(code)}`),d=await r.json();if(!r.ok)throw new Error(d.error||"Not found");const rows=d.product?[normalizeFunko(d.product)]:[];$("funkoLookupStatus").textContent=rows.length?"Product found • 0 AI calls":"Barcode wasn't found. Try name search below.";renderFunkoResults(rows)}catch(err){$("funkoLookupStatus").textContent="Barcode wasn't found. Try searching the Funko name below.";renderFunkoResults([])}}
+async function searchFunkoName(q){q=String(q||"").trim();if(q.length<2){toast("Enter a Funko name");return}$("funkoLookupStatus").textContent="Searching products…";$("funkoResults").innerHTML="";try{const r=await fetch(`/api/funko/search?q=${encodeURIComponent(q)}`),d=await r.json();if(!r.ok)throw new Error(d.error||"Search failed");const rows=(d.products||[]).map(normalizeFunko).filter(f=>/funko|pop!/i.test([f.brand,f.title,f.description].join(" "))).slice(0,20);$("funkoLookupStatus").textContent=rows.length?`${rows.length} Funko match${rows.length===1?"":"es"} • 0 AI calls`:"No Funko matches found.";renderFunkoResults(rows)}catch(err){console.warn(err);$("funkoLookupStatus").textContent="Could not search the barcode database right now."}}
+document.querySelectorAll("[data-funko-go]").forEach(b=>b.addEventListener("click",()=>funkoGo(b.dataset.funkoGo)));$("funkoBackVaults")?.addEventListener("click",()=>{stopFunkoScanner();showVaultSelector()});$("funkoProfileShortcut")?.addEventListener("click",()=>{stopFunkoScanner();showApp();go("profile")});$("funkoStartScanBtn")?.addEventListener("click",startFunkoScanner);$("funkoStopScanBtn")?.addEventListener("click",stopFunkoScanner);$("funkoBarcodeForm")?.addEventListener("submit",e=>{e.preventDefault();lookupFunkoBarcode($("funkoBarcodeInput").value)});$("funkoSearchForm")?.addEventListener("submit",e=>{e.preventDefault();searchFunkoName($("funkoSearchInput").value)});$("funkoVaultSearch")?.addEventListener("input",renderFunkoVault);$("funkoVaultSort")?.addEventListener("change",renderFunkoVault);$("funkoDetailBack")?.addEventListener("click",()=>funkoGo("funkoVault"));
+
 function showAuthGate(){
   $("authGate").classList.remove("hidden");
   $("vaultGate")?.classList.add("hidden");
   $("pokemonShell")?.classList.add("hidden");
+  $("funkoShell")?.classList.add("hidden");
   $("appShell").classList.add("hidden");
 }
 function showApp(){
   $("authGate").classList.add("hidden");
   $("vaultGate")?.classList.add("hidden");
   $("pokemonShell")?.classList.add("hidden");
+  $("funkoShell")?.classList.add("hidden");
   $("appShell").classList.remove("hidden");
   activeVaultCategory="sports";
   const meta=vaultMeta(activeVaultCategory);

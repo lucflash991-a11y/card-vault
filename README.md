@@ -1,10 +1,10 @@
-# Card Vault v3.0.1 — Pokémon API Vault
+# Card Vault v3.0.2 — Funko Barcode Vault
 
 Card Vault started as a sports-card scanner and collection tracker. v3.0 begins the transition into a **multi-collectible platform** while keeping every collectible category separated.
 
 ## Current Build
 
-**v3.0.1**
+**v3.0.2**
 
 Built from the stable **v2.4.2 Trade / Sale Flow Hotfix** baseline.
 
@@ -591,6 +591,12 @@ The Sports app was not converted to TCGdex and its Gemini scanner path was not c
 TCGdex is used before any future AI fallback. The v3.0.1 Pokémon lookup itself does not call Gemini.
 
 
+
+## v3.0.2 — Funko Barcode Vault
+
+Funko is now live with a barcode-first, zero-AI path. It adds camera UPC/EAN scanning when supported, manual barcode entry, name search, public upc.dev product lookup, 24-hour lookup caching, a separate Funko Home and Vault, and cloud storage under `users/{uid}/funkoItems/{itemId}`. Sports and Pokémon remain separate.
+
+
 # Current Core Features
 
 ## Sports Scanner
@@ -675,10 +681,10 @@ firestore.rules
 
 v3.0.0 does **not** require new Firestore rules beyond the rules already used by v2.4.2.
 
-After deploying v3.0.1, verify:
+After deploying v3.0.2, verify:
 
 ```text
-BUILD v3.0.1
+BUILD v3.0.2
 ```
 
 in Card Vault.

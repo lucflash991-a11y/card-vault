@@ -82,12 +82,12 @@
           <span class="vault-choice-arrow">›</span>
         </button>
 
-        <button class="vault-choice upcoming" data-vault-choice="funko" type="button">
+        <button class="vault-choice live funko-live" data-vault-choice="funko" type="button">
           <span class="vault-choice-icon">FN</span>
           <span class="vault-choice-copy">
-            <small>COMING SOON</small>
+            <small>LIVE • BARCODE API</small>
             <strong>Funko</strong>
-            <em>Separate Pop collection and analytics</em>
+            <em>Barcode-first Pop lookup and separate Funko Vault</em>
           </span>
           <span class="vault-choice-arrow">›</span>
         </button>
@@ -224,6 +224,36 @@
       <button class="pokemon-tab" data-pokemon-go="pokemonVault" type="button"><span>▦</span><b>Vault</b></button>
       <button class="pokemon-tab" data-pokemon-go="pokemonDiscover" type="button"><span>◎</span><b>Discover</b></button>
     </nav>
+  </div>
+
+
+  <div id="funkoShell" class="funko-shell hidden">
+    <header class="funko-topbar">
+      <button id="funkoBackVaults" class="funko-back" type="button"><span>‹</span><b>Vaults</b></button>
+      <div class="funko-brand"><span>FN</span><div><small>CARD VAULT</small><strong>Funko</strong></div></div>
+      <button id="funkoProfileShortcut" class="funko-profile" type="button">CV</button>
+    </header>
+    <main class="funko-main">
+      <section id="funkoHome" class="funko-screen active">
+        <div class="funko-hero"><div><small>FUNKO VAULT</small><h1>Your Pops.</h1><p>Barcode-first identification with zero Gemini usage.</p></div><button class="funko-primary" data-funko-go="funkoScan" type="button">Scan barcode</button></div>
+        <div class="funko-stats"><article><small>COLLECTION VALUE</small><strong id="funkoTotalValue">$0</strong></article><article><small>POPS</small><strong id="funkoCount">0</strong></article><article><small>FRANCHISES</small><strong id="funkoFranchiseCount">0</strong></article><article><small>AVG. VALUE</small><strong id="funkoAverageValue">$0</strong></article></div>
+        <section class="funko-section"><div class="funko-section-head"><div><small>RECENT</small><h2>Recently added</h2></div><button data-funko-go="funkoVault" type="button">View Vault</button></div><div id="funkoRecent" class="funko-grid"></div><p id="funkoRecentEmpty" class="funko-empty">No Funkos yet. Scan a box barcode to add your first one.</p></section>
+        <section class="funko-section"><div class="funko-section-head"><div><small>COLLECTION</small><h2>Top franchises</h2></div></div><div id="funkoTopFranchises" class="funko-ranking"></div></section>
+      </section>
+      <section id="funkoScan" class="funko-screen">
+        <div class="funko-page-title"><small>BARCODE FIRST</small><h1>Scan the box.</h1><p>Point the camera at the UPC/EAN barcode on the bottom of the Funko box.</p></div>
+        <div class="funko-scanner-card"><video id="funkoBarcodeVideo" playsinline muted></video><div id="funkoScannerPlaceholder" class="funko-scanner-placeholder"><span>▥</span><strong>Barcode Scanner</strong><p>Uses your phone camera locally. Reading the barcode itself costs nothing.</p></div><div class="funko-scan-actions"><button id="funkoStartScanBtn" class="funko-primary wide" type="button">Start Camera Scanner</button><button id="funkoStopScanBtn" class="funko-secondary hidden" type="button">Stop Camera</button></div><p id="funkoBarcodeSupport" class="funko-support-note"></p></div>
+        <div class="funko-divider"><span>OR ENTER BARCODE</span></div>
+        <form id="funkoBarcodeForm" class="funko-form"><label>UPC / EAN<input id="funkoBarcodeInput" inputmode="numeric" autocomplete="off" placeholder="e.g. 889698123456"></label><button class="funko-primary wide" type="submit">Look Up Barcode</button></form>
+        <div class="funko-divider"><span>OR SEARCH BY NAME</span></div>
+        <form id="funkoSearchForm" class="funko-form"><label>Character / Funko name<input id="funkoSearchInput" type="search" autocomplete="off" placeholder="e.g. Spider-Man Funko Pop"></label><button class="funko-secondary wide" type="submit">Search Products</button></form>
+        <div class="funko-api-note"><strong>0 AI calls</strong><span>Barcode and text product lookup run without Gemini.</span></div><div id="funkoLookupStatus" class="funko-status"></div><div id="funkoResults" class="funko-results"></div>
+      </section>
+      <section id="funkoVault" class="funko-screen"><div class="funko-page-title"><small>FUNKO VAULT</small><h1>Your collection.</h1><p>Completely separate from Sports and Pokémon.</p></div><div class="funko-vault-tools"><input id="funkoVaultSearch" type="search" placeholder="Search character, franchise, number…"><select id="funkoVaultSort"><option value="newest">Newest</option><option value="value-high">Value: high to low</option><option value="name">Name A–Z</option></select></div><div id="funkoVaultGrid" class="funko-grid"></div><p id="funkoVaultEmpty" class="funko-empty">Your Funko Vault is empty.</p></section>
+      <section id="funkoDiscover" class="funko-screen"><div class="funko-page-title"><small>FUNKO DISCOVER</small><h1>Funko only.</h1><p>This category stays isolated from Sports, Pokémon and Comics. Public Funko Market comes in a later social pass.</p></div><div class="funko-coming"><span>FN</span><div><strong>Funko category is live.</strong><p>Scanning and collecting work now; social publishing comes later.</p></div></div></section>
+      <section id="funkoDetail" class="funko-screen"><button id="funkoDetailBack" class="funko-inline-back" type="button">‹ Back</button><div id="funkoDetailContent"></div></section>
+    </main>
+    <nav class="funko-nav"><button class="funko-tab active" data-funko-go="funkoHome" type="button"><span>⌂</span><b>Home</b></button><button class="funko-tab" data-funko-go="funkoScan" type="button"><span>▥</span><b>Scan</b></button><button class="funko-tab" data-funko-go="funkoVault" type="button"><span>▦</span><b>Vault</b></button><button class="funko-tab" data-funko-go="funkoDiscover" type="button"><span>◎</span><b>Discover</b></button></nav>
   </div>
 
   <div id="appShell" class="app-shell hidden">
@@ -822,7 +852,7 @@
         </div>
 
         <p class="settings-footnote">Platform features live in Discover. Your Home stays personal and clean.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.0.1</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.0.2</p>
       </section>
     </main>
 
@@ -901,6 +931,6 @@
 <section id="counterOfferModal" class="sheet-modal hidden" aria-hidden="true"><div class="sheet-backdrop" data-close-counter></div><div class="sheet-card"><div class="sheet-grabber"></div><div class="sheet-title-row"><div><small>COUNTER OFFER</small><h2>Make a counter</h2></div><button class="back-circle" data-close-counter type="button">×</button></div><div class="money-input"><span>$</span><input id="counterCashAmount" type="number" min="0" step="0.01" placeholder="Cash amount"></div><label class="offer-note-label">Note<textarea id="counterNote" rows="3" maxlength="300" placeholder="Add a note"></textarea></label><button id="submitCounterBtn" class="primary-button" type="button"><span>Send counter</span><span>↗</span></button></div></section>
 <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=301"></script>
+  <script type="module" src="/app.js?v=302"></script>
 </body>
 </html>
