@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"3.2.1"});
+  res.json({version:"3.2.2"});
 });
 
 app.use((req,res,next)=>{
@@ -146,9 +146,160 @@ function getFirebaseConfig(){
 
 
 
-const funkoLookupCache=new Map();const FUNKO_CACHE_MS=24*60*60*1000;function normalizeUpcProduct(p={}){const price=Number(p.price||p.lowest_price||0);return{upc:String(p.upc||p.ean||""),title:String(p.name||p.title||"Unknown Funko"),brand:String(p.brand||"Funko"),franchise:String(p.category||p.brand||"Funko"),image:String(p.image_url||p.image||""),description:String(p.description||""),value:Number.isFinite(price)?price:0,priceSource:"UPC product data"}}
-app.get("/api/funko/barcode/:code",async(req,res)=>{try{const code=String(req.params.code||"").replace(/\D/g,"");if(!/^\d{8,14}$/.test(code))return res.status(400).json({error:"Invalid UPC/EAN"});const key=`b:${code}`,cached=funkoLookupCache.get(key);if(cached&&Date.now()-cached.savedAt<FUNKO_CACHE_MS)return res.json(cached.data);const r=await fetch(`https://upc.dev/v1/product/${encodeURIComponent(code)}`,{headers:{Accept:"application/json","User-Agent":"CardVault/3.0.2"}});if(r.status===404)return res.status(404).json({error:"Barcode not found"});if(r.status===429)return res.status(429).json({error:"Free barcode lookup limit reached for today"});if(!r.ok)return res.status(502).json({error:"Barcode lookup unavailable"});const d=await r.json(),p=d?.data||d?.product||d,product=normalizeUpcProduct(p);if(!product.upc)product.upc=code;const data={product,source:"upc.dev",aiUsed:false};funkoLookupCache.set(key,{savedAt:Date.now(),data});res.json(data)}catch(err){console.error("Funko barcode:",err);res.status(502).json({error:"Could not reach barcode service"})}});
-app.get("/api/funko/search",async(req,res)=>{try{let q=String(req.query.q||"").trim().slice(0,100);if(q.length<2)return res.status(400).json({error:"Search is too short"});if(!/funko/i.test(q))q=`Funko Pop ${q}`;const key=`s:${q.toLowerCase()}`,cached=funkoLookupCache.get(key);if(cached&&Date.now()-cached.savedAt<FUNKO_CACHE_MS)return res.json(cached.data);const r=await fetch(`https://upc.dev/v1/search?q=${encodeURIComponent(q)}`,{headers:{Accept:"application/json","User-Agent":"CardVault/3.0.2"}});if(r.status===429)return res.status(429).json({error:"Free barcode lookup limit reached for today"});if(!r.ok)return res.status(502).json({error:"Product search unavailable"});const d=await r.json(),rows=d?.data?.products||d?.products||[],products=(Array.isArray(rows)?rows:[]).map(normalizeUpcProduct).filter(p=>/funko|pop!/i.test([p.brand,p.title,p.description].join(" "))).slice(0,20),data={products,source:"upc.dev",aiUsed:false};funkoLookupCache.set(key,{savedAt:Date.now(),data});res.json(data)}catch(err){console.error("Funko search:",err);res.status(502).json({error:"Could not reach product search"})}});
+
+const funkoLookupCache=new Map();
+const FUNKO_CACHE_MS=24*60*60*1000;
+
+function normalizeUpcItemdbProduct(p={}){
+  const offers=Array.isArray(p.offers)?p.offers.filter(o=>Number(o?.price)>0):[];
+  const offerPrices=offers.map(o=>Number(o.price)).filter(v=>Number.isFinite(v)&&v>0);
+  const lowRecorded=Number(p.lowest_recorded_price||0);
+  const highRecorded=Number(p.highest_recorded_price||0);
+  let value=0;
+  if(offerPrices.length){
+    const sorted=offerPrices.slice().sort((a,b)=>a-b);
+    value=sorted[Math.floor(sorted.length/2)];
+  }else if(Number.isFinite(lowRecorded)&&lowRecorded>0){
+    value=lowRecorded;
+  }
+
+  const images=Array.isArray(p.images)?p.images.filter(Boolean):[];
+  const title=String(p.title||"Unknown Funko");
+  const brand=String(p.brand||"Funko");
+  const category=String(p.category||"");
+  const popMatch=title.match(/(?:POP!?\s*(?:VINYL)?\s*)?(?:NO\.?\s*|#)\s*(\d{1,5})\b/i)
+    || title.match(/\bPOP!?\s+(\d{1,5})\b/i);
+
+  let franchise="Funko";
+  if(category){
+    const parts=category.split(">").map(x=>x.trim()).filter(Boolean);
+    franchise=parts[parts.length-1]||"Funko";
+  }
+  if(/funko/i.test(brand))franchise=franchise==="Funko" ? "Funko" : franchise;
+
+  return {
+    upc:String(p.upc||p.ean||p.gtin||""),
+    ean:String(p.ean||""),
+    title,
+    brand,
+    franchise,
+    category,
+    model:String(p.model||""),
+    popNumber:String(popMatch?.[1]||""),
+    image:String(images[0]||""),
+    images,
+    description:String(p.description||""),
+    value,
+    priceLow:Number.isFinite(lowRecorded)&&lowRecorded>0?lowRecorded:0,
+    priceHigh:Number.isFinite(highRecorded)&&highRecorded>0?highRecorded:0,
+    priceSource:offerPrices.length?"UPCitemdb current offers":"UPCitemdb recorded price",
+    offers:offers.slice(0,6).map(o=>({
+      merchant:String(o.merchant||o.domain||""),
+      price:Number(o.price||0),
+      condition:String(o.condition||""),
+      availability:String(o.availability||"")
+    }))
+  };
+}
+
+async function upcItemdbJson(url){
+  const r=await fetch(url,{
+    headers:{
+      "Accept":"application/json",
+      "Accept-Encoding":"gzip, deflate",
+      "User-Agent":"CardVault/3.2.2"
+    }
+  });
+  let data=null;
+  try{data=await r.json()}catch{}
+  if(r.status===429){
+    const err=new Error("Free UPC lookup limit reached for today");
+    err.code=429;throw err;
+  }
+  if(r.status===404){
+    const err=new Error("No product found");
+    err.code=404;throw err;
+  }
+  if(!r.ok){
+    const err=new Error(data?.message||data?.code||"UPC lookup unavailable");
+    err.code=r.status;throw err;
+  }
+  return data||{};
+}
+
+app.get("/api/funko/barcode/:code",async(req,res)=>{
+  try{
+    let code=String(req.params.code||"").replace(/\D/g,"");
+    if(!/^\d{8,14}$/.test(code))return res.status(400).json({error:"Invalid UPC/EAN"});
+
+    const key=`b:${code}`;
+    const cached=funkoLookupCache.get(key);
+    if(cached&&Date.now()-cached.savedAt<FUNKO_CACHE_MS)return res.json({...cached.data,cached:true});
+
+    // UPCitemdb accepts UPC/EAN/GTIN on its trial lookup endpoint.
+    let data;
+    try{
+      data=await upcItemdbJson(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(code)}`);
+    }catch(err){
+      // Some scanners return EAN-13 with a leading zero for a UPC-A.
+      // Retry the 12-digit UPC form when appropriate.
+      if(code.length===13&&code.startsWith("0")){
+        const upc12=code.slice(1);
+        data=await upcItemdbJson(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(upc12)}`);
+        code=upc12;
+      }else throw err;
+    }
+
+    const items=Array.isArray(data.items)?data.items:[];
+    if(!items.length)return res.status(404).json({error:"Barcode not found"});
+
+    const products=items.map(normalizeUpcItemdbProduct);
+    // Barcode is exact enough that we do NOT reject a result only because
+    // its title/brand is imperfect. The user gets the actual database hit.
+    const payload={product:products[0],products,source:"UPCitemdb",aiUsed:false};
+    funkoLookupCache.set(key,{savedAt:Date.now(),data:payload});
+    res.json(payload);
+  }catch(err){
+    console.error("Funko barcode:",err);
+    res.status(err.code||502).json({error:err.message||"Could not reach barcode service"});
+  }
+});
+
+app.get("/api/funko/search",async(req,res)=>{
+  try{
+    let q=String(req.query.q||"").trim().slice(0,100);
+    if(q.length<2)return res.status(400).json({error:"Search is too short"});
+
+    // Add Funko to a normal character search, but don't require the response
+    // itself to literally contain "Funko" because database titles vary.
+    const searchPhrase=/funko|pop!/i.test(q)?q:`Funko Pop ${q}`;
+    const key=`s:${searchPhrase.toLowerCase()}`;
+    const cached=funkoLookupCache.get(key);
+    if(cached&&Date.now()-cached.savedAt<FUNKO_CACHE_MS)return res.json({...cached.data,cached:true});
+
+    const url=`https://api.upcitemdb.com/prod/trial/search?s=${encodeURIComponent(searchPhrase)}&type=product&match_mode=0`;
+    const data=await upcItemdbJson(url);
+    const items=Array.isArray(data.items)?data.items:[];
+
+    // Score likely Funko products first without deleting weaker database hits.
+    const scored=items.map(p=>{
+      const text=[p.brand,p.title,p.description,p.category].join(" ");
+      let score=0;
+      if(/funko/i.test(text))score+=5;
+      if(/\bpop!?\b/i.test(text))score+=3;
+      if(String(p.brand||"").toLowerCase()==="funko")score+=4;
+      return {score,p};
+    }).sort((a,b)=>b.score-a.score);
+
+    const products=scored.map(x=>normalizeUpcItemdbProduct(x.p)).slice(0,10);
+    const payload={products,source:"UPCitemdb",aiUsed:false};
+    funkoLookupCache.set(key,{savedAt:Date.now(),data:payload});
+    res.json(payload);
+  }catch(err){
+    console.error("Funko search:",err);
+    res.status(err.code||502).json({error:err.message||"Could not reach product search"});
+  }
+});
 
 const pokemonSearchCache=new Map();
 const POKEMON_CACHE_MS=6*60*60*1000;
@@ -468,5 +619,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v3.2.1 running on port ${port}`);
+  console.log(`Card Vault v3.2.2 running on port ${port}`);
 });

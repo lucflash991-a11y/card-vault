@@ -1,10 +1,10 @@
-# Card Vault v3.2.1 — iPhone Funko Barcode Hotfix
+# Card Vault v3.2.2 — Funko Lookup Fix
 
 Card Vault started as a sports-card scanner and collection tracker. v3.0 begins the transition into a **multi-collectible platform** while keeping every collectible category separated.
 
 ## Current Build
 
-**v3.2.1**
+**v3.2.2**
 
 Built from the stable **v2.4.2 Trade / Sale Flow Hotfix** baseline.
 
@@ -684,7 +684,7 @@ v3.0.0 does **not** require new Firestore rules beyond the rules already used by
 After deploying v3.0.2, verify:
 
 ```text
-BUILD v3.2.1
+BUILD v3.2.2
 ```
 
 in Card Vault.
@@ -692,3 +692,24 @@ in Card Vault.
 
 ## v3.2.1 — iPhone/Safari Barcode Hotfix
 Adds Html5-Qrcode as an automatic fallback when Safari does not expose BarcodeDetector. UPC-A, UPC-E, EAN-13 and EAN-8 stay local and use 0 Gemini calls.
+
+
+## v3.2.2 — Funko Lookup Fix
+
+Fixed Funko barcodes and name searches returning no matches.
+
+Cause:
+- The prior Funko backend used an incorrect product API endpoint/response shape.
+- The client also filtered returned name-search results too aggressively.
+
+Fix:
+- switched Funko product lookup to UPCitemdb's documented free Explorer API
+- exact barcode lookup through `/prod/trial/lookup`
+- name search through `/prod/trial/search`
+- UPC-A / EAN handling including leading-zero retry
+- no API key/signup required
+- 100 combined free requests/day from the provider
+- 24-hour Card Vault cache retained
+- valid barcode hits are no longer discarded because the product title is formatted differently
+- name results are ranked toward Funko products instead of hard-filtered away
+- still 0 Gemini calls
