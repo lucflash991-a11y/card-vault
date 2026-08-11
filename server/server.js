@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"3.3.1"});
+  res.json({version:"3.3.2"});
 });
 
 app.use((req,res,next)=>{
@@ -183,11 +183,97 @@ function normalizeGcdIssue(d={}){
     upc:barcode.length>5?barcode.slice(0,-5):barcode,
     supplement:barcode.length>5?barcode.slice(-5):"",
     isbn:String(d.isbn||""),
-    image:String(d.cover||""),
+    image:extractCoverUrlFromGcdData(d),
     description:[d.publication_date,d.variant_name].filter(Boolean).join(" • "),
     value:0,priceSource:"Not priced",priceNote:"GCD metadata verified. Market value has not been estimated."
   };
 }
+
+function absoluteGcdUrl(v=""){
+  v=String(v||"").trim();
+  if(!v)return "";
+  if(/^https?:\/\//i.test(v))return v;
+  if(v.startsWith("//"))return `https:${v}`;
+  if(v.startsWith("/"))return `https://www.comics.org${v}`;
+  return `https://www.comics.org/${v.replace(/^\/+/,"")}`;
+}
+function extractCoverUrlFromGcdData(d={}){
+  const candidates=[
+    d.cover,d.cover_url,d.image,d.image_url,d.thumbnail,d.thumbnail_url,
+    d?.cover?.url,d?.cover?.image,d?.cover?.image_url,
+    d?.cover_set?.[0]?.url,d?.cover_set?.[0]?.image,d?.cover_set?.[0]?.image_url,
+    d?.covers?.[0]?.url,d?.covers?.[0]?.image,d?.covers?.[0]?.image_url
+  ].filter(v=>typeof v==="string"&&v.trim());
+  return absoluteGcdUrl(candidates[0]||"");
+}
+async function discoverGcdCoverUrl(gcdId){
+  gcdId=String(gcdId||"").replace(/\D/g,"");
+  if(!gcdId)return "";
+
+  // First ask the issue API and inspect multiple possible cover fields.
+  try{
+    const d=await gcdJson(`https://www.comics.org/api/issue/${gcdId}/`);
+    const apiCover=extractCoverUrlFromGcdData(d);
+    if(apiCover)return apiCover;
+  }catch{}
+
+  // Fallback: inspect the public issue page and locate its cover image.
+  try{
+    const r=await fetch(`https://www.comics.org/issue/${gcdId}/`,{
+      headers:{"User-Agent":"CardVault/3.3.2","Accept":"text/html"}
+    });
+    if(r.ok){
+      const h=await r.text();
+      const patterns=[
+        /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
+        /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
+        /<img[^>]+(?:class=["'][^"']*cover[^"']*["'][^>]+)?src=["']([^"']*(?:cover|covers_by_id)[^"']*)["']/i,
+        /src=["']([^"']*covers_by_id[^"']+)["']/i
+      ];
+      for(const p of patterns){
+        const m=h.match(p);
+        if(m?.[1])return absoluteGcdUrl(m[1].replace(/&amp;/g,"&"));
+      }
+    }
+  }catch{}
+  return "";
+}
+
+app.get("/api/comics/cover/:gcdId",async(req,res)=>{
+  try{
+    const gcdId=String(req.params.gcdId||"").replace(/\D/g,"");
+    if(!gcdId)return res.redirect(302,"/icons/card-placeholder.svg");
+
+    const cacheKey=`cover:${gcdId}`;
+    const cached=comicLookupCache.get(cacheKey);
+    let coverUrl=cached&&Date.now()-cached.savedAt<COMIC_CACHE_MS?cached.data?.url:"";
+    if(!coverUrl){
+      coverUrl=await discoverGcdCoverUrl(gcdId);
+      if(coverUrl)comicLookupCache.set(cacheKey,{savedAt:Date.now(),data:{url:coverUrl}});
+    }
+    if(!coverUrl)return res.redirect(302,"/icons/card-placeholder.svg");
+
+    const r=await fetch(coverUrl,{
+      headers:{
+        "User-Agent":"CardVault/3.3.2",
+        "Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "Referer":`https://www.comics.org/issue/${gcdId}/`
+      }
+    });
+    if(!r.ok)return res.redirect(302,"/icons/card-placeholder.svg");
+
+    const ct=r.headers.get("content-type")||"image/jpeg";
+    if(!ct.startsWith("image/"))return res.redirect(302,"/icons/card-placeholder.svg");
+    const buf=Buffer.from(await r.arrayBuffer());
+    res.set("Content-Type",ct);
+    res.set("Cache-Control","public, max-age=86400, stale-while-revalidate=604800");
+    res.send(buf);
+  }catch(err){
+    console.error("Comic cover proxy:",err);
+    res.redirect(302,"/icons/card-placeholder.svg");
+  }
+});
+
 async function gcdIssueDetail(apiUrl){
   return normalizeGcdIssue(await gcdJson(apiUrl));
 }
@@ -761,5 +847,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v3.3.1 running on port ${port}`);
+  console.log(`Card Vault v3.3.2 running on port ${port}`);
 });

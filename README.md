@@ -1,10 +1,10 @@
-# Card Vault v3.3.1 — Comic Scanner Rebuild
+# Card Vault v3.3.2 — Comic Cover Image Fix
 
 Card Vault started as a sports-card scanner and collection tracker. v3.0 begins the transition into a **multi-collectible platform** while keeping every collectible category separated.
 
 ## Current Build
 
-**v3.3.1**
+**v3.3.2**
 
 Built from the stable **v2.4.2 Trade / Sale Flow Hotfix** baseline.
 
@@ -684,7 +684,7 @@ v3.0.0 does **not** require new Firestore rules beyond the rules already used by
 After deploying v3.0.2, verify:
 
 ```text
-BUILD v3.3.1
+BUILD v3.3.2
 ```
 
 in Card Vault.
@@ -813,4 +813,22 @@ Live refresh uses Card Vault's existing Gemini + web-search approach and tries t
 
 ### Manual GCD search
 Title + issue number searches the Grand Comics Database directly and uses zero Gemini calls.
+
+
+
+## v3.3.2 — Comic Cover Image Fix
+
+Fixed comic covers appearing as the Card Vault placeholder.
+
+Cause:
+- GCD cover URLs are not reliable to hotlink directly from the client.
+- GCD API responses can expose cover information in different shapes.
+
+Fix:
+- all GCD comic covers now load through Card Vault's own `/api/comics/cover/{gcdId}` proxy
+- proxy checks multiple GCD API cover fields
+- if the API does not expose a usable cover URL, Card Vault inspects the public GCD issue page for its cover image
+- image bytes are served through Render on the same origin as Card Vault
+- covers are cached for 24 hours
+- search results, Comic Vault cards and Comic Detail all use the proxy
 
