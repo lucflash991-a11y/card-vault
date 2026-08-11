@@ -1,4 +1,4 @@
-# Card Vault v3.3.5 — eBay Comic Values
+# Card Vault v3.3.6 — Comic AI Scan Hotfix
 
 Card Vault started as a sports-card scanner and collection tracker. v3.0 begins the transition into a **multi-collectible platform** while keeping every collectible category separated.
 
@@ -684,7 +684,7 @@ v3.0.0 does **not** require new Firestore rules beyond the rules already used by
 After deploying v3.0.2, verify:
 
 ```text
-BUILD v3.3.5
+BUILD v3.3.6
 ```
 
 in Card Vault.
@@ -965,3 +965,26 @@ at any time in Comic Detail.
 Identical pricing requests are cached server-side for 6 hours to reduce eBay API usage and unnecessary OAuth traffic.
 
 No Firebase rule changes are required.
+
+
+## v3.3.6 — Comic AI Scan Hotfix
+
+Fixes the `Too many AI scans from this connection` lockout shown in Comic Scan.
+
+### Root cause
+The message was Card Vault's own server-side rate limiter, not the iPhone camera and not necessarily Gemini's quota.
+
+### Fixes
+- Card Vault now reads the real forwarded client IP instead of relying only on the Render proxy IP.
+- Generic AI scan protection increased from 30 to 120 requests/hour per connection.
+- Comic cover photos now have a separate 90/hour limiter so comic scans do not unnecessarily collide with other Card Vault AI scans.
+- Re-scanning the exact same cover photo can reuse a cached result for 24 hours instead of burning another Gemini request.
+- Comic cover identification now tries every model in `GEMINI_SCAN_MODELS` in order.
+- If the first free Gemini model returns 429/503, Card Vault automatically tries the backup model.
+- If the optional visual-ranking Gemini call fails, the comic still returns Metron/GCD metadata-ranked candidates.
+- Error messages now clearly distinguish Card Vault scan protection from actual Gemini free-tier quota.
+- Barcode and manual Metron search remain available even when photo AI is temporarily unavailable.
+
+No Firebase rule changes.
+No new Render environment variables.
+Existing Metron and eBay integrations are preserved.

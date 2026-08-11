@@ -884,7 +884,14 @@ async function analyzeComicCover(){
     const rows=(d.items||[]).map(x=>normalizeComic({...x,userCoverImage:comicCoverData}));
     $("comicLookupStatus").textContent=rows.length?`${rows.length} possible cover${rows.length===1?"":"s"} • best visual matches are first`:`The cover was read, but no strong database candidates were found. Try manual title + issue search.`;
     renderComicResults(rows);
-  }catch(err){console.warn(err);$("comicLookupStatus").textContent=err.message||"Could not identify cover."}
+  }catch(err){
+    console.warn(err);
+    const msg=err.message||"Could not identify cover.";
+    $("comicLookupStatus").textContent=msg;
+    if(/Gemini|quota|cooling down/i.test(msg)){
+      toast("Photo AI is temporarily limited — barcode and manual Metron search still work");
+    }
+  }
   finally{btn.disabled=!comicCoverData;btn.textContent="Identify Cover"}
 }
 $("comicCoverInput")?.addEventListener("change",async()=>{

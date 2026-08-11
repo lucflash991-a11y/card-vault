@@ -1,4 +1,5 @@
 import express from "express";
+import { createHash } from "node:crypto";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -68,7 +69,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"3.3.5"});
+  res.json({version:"3.3.6"});
 });
 
 app.use((req,res,next)=>{
@@ -80,12 +81,32 @@ app.use((req,res,next)=>{
 app.use(express.static("public",{etag:false,maxAge:0}));
 
 const buckets = new Map();
+function realClientKey(req){
+  const forwarded=String(req.headers["x-forwarded-for"]||"").split(",")[0].trim();
+  return String(req.headers["cf-connecting-ip"]||forwarded||req.ip||"unknown").trim();
+}
 function scanRateLimit(req,res,next){
-  const key=req.ip||req.headers["x-forwarded-for"]||"unknown";
-  const now=Date.now(), windowMs=60*60*1000, max=30;
+  const key=realClientKey(req);
+  const now=Date.now(), windowMs=60*60*1000, max=120;
   const recent=(buckets.get(key)||[]).filter(t=>now-t<windowMs);
-  if(recent.length>=max)return res.status(429).json({error:"Too many AI scans from this connection. Try again later."});
+  if(recent.length>=max)return res.status(429).json({
+    error:"Card Vault scan protection is temporarily cooling down. Try again shortly.",
+    source:"card-vault-rate-limit"
+  });
   recent.push(now);buckets.set(key,recent);next();
+}
+
+// Comics get their own lighter limiter so barcode/manual use never consumes photo-scan capacity.
+const comicCoverBuckets=new Map();
+function comicCoverRateLimit(req,res,next){
+  const key=realClientKey(req);
+  const now=Date.now(), windowMs=60*60*1000, max=90;
+  const recent=(comicCoverBuckets.get(key)||[]).filter(t=>now-t<windowMs);
+  if(recent.length>=max)return res.status(429).json({
+    error:"Comic cover scans are cooling down for this connection. Barcode and manual Metron search still work.",
+    source:"card-vault-comic-rate-limit"
+  });
+  recent.push(now);comicCoverBuckets.set(key,recent);next();
 }
 
 function parseDataUrl(value){
@@ -343,7 +364,7 @@ function metronAuthHeader(){
 }
 async function metronJson(url){
   const auth=metronAuthHeader();if(!auth)return null;
-  const r=await fetch(url,{headers:{"Accept":"application/json","Authorization":auth,"User-Agent":"CardVault/3.3.5"}});
+  const r=await fetch(url,{headers:{"Accept":"application/json","Authorization":auth,"User-Agent":"CardVault/3.3.6"}});
   if(r.status===401||r.status===403)return null;
   if(r.status===429){const e=new Error("Metron rate limit reached");e.code=429;throw e}
   if(!r.ok)return null;
@@ -411,7 +432,7 @@ function metadataComicScore(c,det={}){
 }
 async function fetchImageInline(url){
   url=safeComicImageUrl(url);if(!url)return null;
-  try{const r=await fetch(url,{headers:{"Accept":"image/*","User-Agent":"CardVault/3.3.5"}});if(!r.ok)return null;const ct=r.headers.get("content-type")||"image/jpeg";if(!ct.startsWith("image/"))return null;const b=Buffer.from(await r.arrayBuffer());if(!b.length||b.length>4_000_000)return null;return {mimeType:ct.split(";")[0],data:b.toString("base64")}}catch{return null}
+  try{const r=await fetch(url,{headers:{"Accept":"image/*","User-Agent":"CardVault/3.3.6"}});if(!r.ok)return null;const ct=r.headers.get("content-type")||"image/jpeg";if(!ct.startsWith("image/"))return null;const b=Buffer.from(await r.arrayBuffer());if(!b.length||b.length>4_000_000)return null;return {mimeType:ct.split(";")[0],data:b.toString("base64")}}catch{return null}
 }
 async function resolveCandidateImage(c){
   if(c.gcdId){const u=await discoverGcdCoverUrl(c.gcdId);if(u)return u}
@@ -451,7 +472,7 @@ async function strongComicCandidates(det={}){
 app.get("/api/comics/metron-status",async(req,res)=>{
   try{
     if(!metronAuthHeader())return res.status(503).json({ok:false,error:"METRON_USER / METRON_PASS missing"});
-    const r=await fetch("https://metron.cloud/api/issue/?series_name=batman&number=1",{headers:{"Accept":"application/json","Authorization":metronAuthHeader(),"User-Agent":"CardVault/3.3.5"}});
+    const r=await fetch("https://metron.cloud/api/issue/?series_name=batman&number=1",{headers:{"Accept":"application/json","Authorization":metronAuthHeader(),"User-Agent":"CardVault/3.3.6"}});
     const remaining=r.headers.get("X-RateLimit-Sustained-Remaining")||"";
     if(r.status===401)return res.status(401).json({ok:false,error:"Metron username/password rejected"});
     if(r.status===429)return res.status(429).json({ok:false,error:"Metron rate limit reached",remaining});
@@ -475,12 +496,28 @@ app.get("/api/comics/search-strong",async(req,res)=>{
   try{const title=String(req.query.title||"").trim().slice(0,100),issue=String(req.query.issue||"").trim().slice(0,30),publisher=String(req.query.publisher||"").trim().slice(0,60),year=String(req.query.year||"").trim().slice(0,4);if(title.length<2||!issue)return res.status(400).json({error:"Title and issue number are required."});const items=(await strongComicCandidates({title,issueNumber:issue,publisher,year})).map(c=>{const m=metadataComicScore(c,{title,issueNumber:issue,publisher,year});return {...c,matchScore:m.score,matchReason:m.reason}}).sort((a,b)=>(b.matchScore||0)-(a.matchScore||0));res.json({items,metronConfigured:Boolean(metronAuthHeader()),source:"GCD + Metron when configured",aiUsed:false})}catch(err){console.error("Strong comic search:",err);res.status(502).json({error:"Comic search failed."})}
 });
 
-app.post("/api/comics/identify-cover",scanRateLimit,async(req,res)=>{
+const comicCoverIdentifyCache=new Map();
+const COMIC_COVER_IDENTIFY_CACHE_MS=24*60*60*1000;
+function comicCoverFingerprint(image){
   try{
-    const image=parseDataUrl(req.body?.image);if(!image)return res.status(400).json({error:"Choose a JPG, PNG, or WebP comic cover photo."});
-    if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Cover identification is not configured. Use title + issue search instead."});
-    const models=String(process.env.GEMINI_SCAN_MODELS||"gemini-3.1-flash-lite,gemini-2.5-flash").split(",").map(x=>x.trim()).filter(Boolean);const model=models[0]||"gemini-3.1-flash-lite";
-    const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    return createHash("sha256").update(String(image?.mimeType||"")).update(String(image?.data||"")).digest("hex").slice(0,32);
+  }catch{return ""}
+}
+
+app.post("/api/comics/identify-cover",comicCoverRateLimit,async(req,res)=>{
+  try{
+    const image=parseDataUrl(req.body?.image);
+    if(!image)return res.status(400).json({error:"Choose a JPG, PNG, or WebP comic cover photo."});
+    if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Cover identification is not configured. Barcode and manual Metron search still work."});
+
+    const fingerprint=comicCoverFingerprint(image);
+    const cached=comicCoverIdentifyCache.get(fingerprint);
+    if(cached&&Date.now()-cached.savedAt<COMIC_COVER_IDENTIFY_CACHE_MS){
+      return res.json({...cached.data,cached:true});
+    }
+
+    const models=String(process.env.GEMINI_SCAN_MODELS||"gemini-3.1-flash-lite,gemini-2.5-flash")
+      .split(",").map(x=>x.trim()).filter(Boolean);
     const prompt=`Identify this physical comic-book FRONT COVER for a comic database search. Return ONLY JSON:
 {"title":"most likely canonical series title","issueNumber":"issue number only","publisher":"publisher if visible or confidently known","year":"4 digit publication year if confidently inferable","variantClues":"specific visible cover/variant clues","printing":"printing if visibly stated","alternateTitles":["up to 4 plausible database series-title spellings"],"confidence":0}
 Rules:
@@ -489,24 +526,97 @@ Rules:
 - Popular Marvel/DC/Image titles may have many series with the same name, so include likely year when possible.
 - If a subtitle may or may not be part of the database title, include both forms in alternateTitles.
 - confidence is 0-100 for text identity only.`;
-    const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt},{inlineData:{mimeType:image.mimeType,data:image.data}}]}],generationConfig:{responseMimeType:"application/json",temperature:.03,maxOutputTokens:650}})});
-    const d=await r.json();if(r.status===429)return res.status(429).json({error:"Free AI quota is temporarily exhausted. Use title + issue search instead."});if(!r.ok)return res.status(502).json({error:"Cover reader could not run."});
-    let text=d?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";text=text.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();const detected=JSON.parse(text);
-    if(!detected.title||!detected.issueNumber)return res.status(422).json({error:"I could not confidently read the title and issue number. Try a clearer photo or manual search."});
+
+    let detected=null,usedModel="",lastStatus=0,lastMessage="";
+    for(const model of models){
+      const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+      try{
+        const r=await fetch(endpoint,{
+          method:"POST",
+          headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
+          body:JSON.stringify({
+            contents:[{role:"user",parts:[{text:prompt},{inlineData:{mimeType:image.mimeType,data:image.data}}]}],
+            generationConfig:{responseMimeType:"application/json",temperature:.03,maxOutputTokens:650}
+          })
+        });
+        lastStatus=r.status;
+        const d=await r.json().catch(()=>({}));
+        if(r.status===429||r.status===503){
+          lastMessage=r.status===429?"Free Gemini quota is temporarily exhausted.":"Gemini model is temporarily unavailable.";
+          continue;
+        }
+        if(!r.ok){
+          lastMessage="Cover reader could not run.";
+          continue;
+        }
+        let text=d?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
+        text=text.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();
+        detected=JSON.parse(text);
+        usedModel=model;
+        break;
+      }catch(err){
+        lastMessage=err?.message||"Cover reader failed.";
+      }
+    }
+
+    if(!detected){
+      if(lastStatus===429)return res.status(429).json({
+        error:"Gemini's free cover-scan quota is temporarily exhausted. Barcode and manual Metron search still work.",
+        source:"gemini-quota"
+      });
+      return res.status(503).json({
+        error:lastMessage||"Cover reader is temporarily unavailable. Barcode and manual Metron search still work.",
+        source:"gemini-unavailable"
+      });
+    }
+
+    if(!detected.title||!detected.issueNumber){
+      return res.status(422).json({error:"I could not confidently read the title and issue number. Try a clearer photo or manual search."});
+    }
+
     let candidates=await strongComicCandidates(detected);
-    // If exact canonical title produced nothing, try Gemini's alternate title spellings.
+
     if(candidates.length<3&&Array.isArray(detected.alternateTitles)){
       for(const alt of detected.alternateTitles.slice(0,4)){
         if(!alt||String(alt).toLowerCase()===String(detected.title).toLowerCase())continue;
-        try{candidates=mergeComicCandidates(candidates,await strongComicCandidates({...detected,title:alt}))}catch{}
+        try{
+          candidates=mergeComicCandidates(candidates,await strongComicCandidates({...detected,title:alt}));
+        }catch{}
       }
     }
-    if(!candidates.length)return res.json({detected,items:[],metronConfigured:Boolean(metronAuthHeader()),source:"Gemini + comic databases"});
-    let ranked=await visualRankComicCandidates(image,candidates,model);
-    // Blend visual score with metadata sanity so exact issue/year remains meaningful.
-    ranked=ranked.map(c=>{const meta=metadataComicScore(c,detected);const visual=Number(c.matchScore||0);const score=visual?Math.round(visual*.78+meta.score*.22):meta.score;return {...c,matchScore:Math.min(99,score),matchReason:c.matchReason||meta.reason}}).sort((a,b)=>(b.matchScore||0)-(a.matchScore||0));
-    res.json({detected,items:ranked.slice(0,12),metronConfigured:Boolean(metronAuthHeader()),source:"Gemini visual match + Metron primary + GCD fallback"})
-  }catch(err){console.error("Comic cover identify:",err);res.status(500).json({error:"Comic cover identification failed."})}
+
+    if(!candidates.length){
+      const result={
+        detected,items:[],metronConfigured:Boolean(metronAuthHeader()),
+        source:"Gemini + Metron primary + GCD fallback",model:usedModel
+      };
+      if(fingerprint)comicCoverIdentifyCache.set(fingerprint,{savedAt:Date.now(),data:result});
+      return res.json(result);
+    }
+
+    // Visual comparison is helpful but optional. If that second Gemini call is rate-limited,
+    // visualRankComicCandidates already falls back to metadata ranking instead of failing the scan.
+    let ranked=await visualRankComicCandidates(image,candidates,usedModel||models[0]);
+    ranked=ranked.map(c=>{
+      const meta=metadataComicScore(c,detected);
+      const visual=Number(c.matchScore||0);
+      const score=visual?Math.round(visual*.78+meta.score*.22):meta.score;
+      return {...c,matchScore:Math.min(99,score),matchReason:c.matchReason||meta.reason};
+    }).sort((a,b)=>(b.matchScore||0)-(a.matchScore||0));
+
+    const result={
+      detected,
+      items:ranked.slice(0,12),
+      metronConfigured:Boolean(metronAuthHeader()),
+      source:"Gemini cover read + Metron primary + GCD fallback",
+      model:usedModel
+    };
+    if(fingerprint)comicCoverIdentifyCache.set(fingerprint,{savedAt:Date.now(),data:result});
+    res.json(result);
+  }catch(err){
+    console.error("Comic cover identify:",err);
+    res.status(500).json({error:"Comic cover identification failed."});
+  }
 });
 
 let ebayAppTokenCache={token:"",expiresAt:0};
@@ -1172,5 +1282,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v3.3.5 running on port ${port}`);
+  console.log(`Card Vault v3.3.6 running on port ${port}`);
 });
