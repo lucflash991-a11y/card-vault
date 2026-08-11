@@ -453,7 +453,7 @@ function vaultMeta(category){
   return {
     sports:{name:"Sports Cards",short:"Sports",code:"SC",live:true},
     pokemon:{name:"Pokémon",short:"Pokémon",code:"PK",live:true},
-    comics:{name:"Comics",short:"Comics",code:"CM",live:false,release:"v3.0.3",text:"Comics will use barcode-first identification when possible, with cover AI only as a fallback."},
+    comics:{name:"Comics",short:"Comics",code:"CM",live:true},
     funko:{name:"Funko",short:"Funko",code:"FN",live:true}
   }[category]||null;
 }
@@ -462,6 +462,7 @@ function showVaultSelector(){
   $("appShell")?.classList.add("hidden");
   $("pokemonShell")?.classList.add("hidden");
   $("funkoShell")?.classList.add("hidden");
+  $("comicShell")?.classList.add("hidden");
   $("vaultGate")?.classList.remove("hidden");
   $("vaultComingSoon")?.classList.add("hidden");
 }
@@ -480,6 +481,7 @@ function enterVault(category){
   $("vaultGate")?.classList.add("hidden");
   if(category==="pokemon") showPokemonApp();
   else if(category==="funko") showFunkoApp();
+  else if(category==="comics") showComicApp();
   else showApp();
 }
 document.querySelectorAll("[data-vault-choice]").forEach(b=>b.addEventListener("click",()=>enterVault(b.dataset.vaultChoice)));
@@ -544,6 +546,7 @@ function showPokemonApp(){
   $("vaultGate")?.classList.add("hidden");
   $("appShell")?.classList.add("hidden");
   $("funkoShell")?.classList.add("hidden");
+  $("comicShell")?.classList.add("hidden");
   $("pokemonShell")?.classList.remove("hidden");
   pokemonCards=readPokemonLocal();
   startPokemonCloud().catch(err=>console.warn("Pokémon cloud:",err));
@@ -659,7 +662,7 @@ const FUNKO_LOCAL_KEY="cardvault.funko.v302.items";let funkoItems=[],funkoCloudU
 function normalizeFunko(x){const title=String(x.title||x.name||"Unknown Funko"),m=title.match(/#\s?(\d{1,5})\b/i)||title.match(/\bPop!?\s*(?:No\.?\s*)?(\d{1,5})\b/i);return{id:String(x.id||x.upc||uid()),category:"funko",upc:String(x.upc||""),title,brand:String(x.brand||"Funko"),franchise:String(x.franchise||x.category||x.brand||"Funko"),popNumber:String(x.popNumber||m?.[1]||""),image:String(x.image||x.image_url||""),description:String(x.description||""),value:Number(x.value||x.price||0),priceSource:String(x.priceSource||"UPC product data"),exclusive:Boolean(x.exclusive),chase:Boolean(x.chase),vaulted:Boolean(x.vaulted),boxCondition:String(x.boxCondition||""),notes:String(x.notes||""),createdAt:Number(x.createdAt||Date.now())}}
 function readFunkoLocal(){try{const r=JSON.parse(localStorage.getItem(FUNKO_LOCAL_KEY)||"[]");return Array.isArray(r)?r.map(normalizeFunko):[]}catch{return[]}}function saveFunkoLocal(){try{localStorage.setItem(FUNKO_LOCAL_KEY,JSON.stringify(funkoItems))}catch{}}function funkoMoney(v){return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(Number(v||0))}
 function funkoGo(id){document.querySelectorAll(".funko-screen").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".funko-tab").forEach(x=>x.classList.toggle("active",x.dataset.funkoGo===id));if(id!=="funkoScan")stopFunkoScanner();if(id==="funkoHome"||id==="funkoVault")renderFunkoAll();window.scrollTo({top:0,behavior:"smooth"})}
-function showFunkoApp(){activeVaultCategory="funko";$("authGate")?.classList.add("hidden");$("vaultGate")?.classList.add("hidden");$("appShell")?.classList.add("hidden");$("pokemonShell")?.classList.add("hidden");$("funkoShell")?.classList.remove("hidden");funkoItems=readFunkoLocal();startFunkoCloud().catch(console.warn);renderFunkoAll();funkoGo("funkoHome");updateFunkoBarcodeSupport()}
+function showFunkoApp(){activeVaultCategory="funko";$("authGate")?.classList.add("hidden");$("vaultGate")?.classList.add("hidden");$("appShell")?.classList.add("hidden");$("pokemonShell")?.classList.add("hidden");$("comicShell")?.classList.add("hidden");$("funkoShell")?.classList.remove("hidden");funkoItems=readFunkoLocal();startFunkoCloud().catch(console.warn);renderFunkoAll();funkoGo("funkoHome");updateFunkoBarcodeSupport()}
 async function startFunkoCloud(){if(funkoCloudUnsub){funkoCloudUnsub();funkoCloudUnsub=null}if(!currentUser||!firebase?.db)return;const col=firebase.collection(firebase.db,"users",currentUser.uid,"funkoItems");funkoCloudUnsub=firebase.onSnapshot(col,snap=>{funkoItems=snap.docs.map(d=>normalizeFunko({id:d.id,...d.data()})).sort((a,b)=>b.createdAt-a.createdAt);saveFunkoLocal();renderFunkoAll()},err=>console.warn("Funko sync:",err))}
 async function saveFunko(item){const f=normalizeFunko(item),i=funkoItems.findIndex(x=>(f.upc&&x.upc===f.upc)||x.id===f.id);if(i>=0)funkoItems[i]={...funkoItems[i],...f};else funkoItems.unshift(f);saveFunkoLocal();renderFunkoAll();if(currentUser&&firebase?.db){const id=(f.upc||f.id).replace(/[^a-zA-Z0-9._-]/g,"_");await firebase.setDoc(firebase.doc(firebase.db,"users",currentUser.uid,"funkoItems",id),f,{merge:true})}}
 async function deleteFunko(id){const f=funkoItems.find(x=>x.id===id);if(!f)return;funkoItems=funkoItems.filter(x=>x.id!==id);saveFunkoLocal();renderFunkoAll();if(currentUser&&firebase?.db){const d=(f.upc||f.id).replace(/[^a-zA-Z0-9._-]/g,"_");await firebase.deleteDoc(firebase.doc(firebase.db,"users",currentUser.uid,"funkoItems",d))}funkoGo("funkoVault");toast("Funko removed")}
@@ -680,11 +683,98 @@ async function lookupFunkoBarcode(code){code=String(code||"").replace(/\D/g,"");
 async function searchFunkoName(q){q=String(q||"").trim();if(q.length<2){toast("Enter a Funko name");return}$("funkoLookupStatus").textContent="Searching products…";$("funkoResults").innerHTML="";try{const r=await fetch(`/api/funko/search?q=${encodeURIComponent(q)}`),d=await r.json();if(!r.ok)throw new Error(d.error||"Search failed");const rows=(d.products||[]).map(normalizeFunko).slice(0,20);$("funkoLookupStatus").textContent=rows.length?`${rows.length} Funko match${rows.length===1?"":"es"} • 0 AI calls`:"No Funko matches found.";renderFunkoResults(rows)}catch(err){console.warn(err);$("funkoLookupStatus").textContent="Could not search the barcode database right now."}}
 document.querySelectorAll("[data-funko-go]").forEach(b=>b.addEventListener("click",()=>funkoGo(b.dataset.funkoGo)));$("funkoBackVaults")?.addEventListener("click",()=>{stopFunkoScanner();showVaultSelector()});$("funkoProfileShortcut")?.addEventListener("click",()=>{stopFunkoScanner();showApp();go("profile")});$("funkoStartScanBtn")?.addEventListener("click",startFunkoScanner);$("funkoStopScanBtn")?.addEventListener("click",()=>stopFunkoScanner());$("funkoBarcodeForm")?.addEventListener("submit",e=>{e.preventDefault();lookupFunkoBarcode($("funkoBarcodeInput").value)});$("funkoSearchForm")?.addEventListener("submit",e=>{e.preventDefault();searchFunkoName($("funkoSearchInput").value)});$("funkoVaultSearch")?.addEventListener("input",renderFunkoVault);$("funkoVaultSort")?.addEventListener("change",renderFunkoVault);$("funkoDetailBack")?.addEventListener("click",()=>funkoGo("funkoVault"));
 
+
+const COMIC_LOCAL_KEY="cardvault.comics.v330.items";
+let comicItems=[],comicCloudUnsub=null,comicHtml5Scanner=null;
+
+function normalizeComic(x){
+  const title=String(x.title||x.name||"Unknown Comic");
+  const issueMatch=String(x.issueNumber||"")||title.match(/(?:#|issue\s*)([0-9A-Za-z.\-]+)/i)?.[1]||"";
+  const publisher=String(x.publisher||x.brand||"").replace(/\s+Comics?$/i,"").trim();
+  return {
+    id:String(x.id||x.upc||x.isbn||uid()),category:"comics",
+    title,series:String(x.series||title.replace(/\s+#?\d+.*$/,"").trim()),
+    issueNumber:String(issueMatch||""),publisher,
+    year:String(x.year||x.publicationYear||""),
+    volume:String(x.volume||""),variant:String(x.variant||""),
+    printing:String(x.printing||""),coverArtist:String(x.coverArtist||""),
+    keyIssue:Boolean(x.keyIssue),keyNote:String(x.keyNote||""),
+    grade:String(x.grade||""),gradingCompany:String(x.gradingCompany||""),
+    upc:String(x.upc||""),supplement:String(x.supplement||""),
+    isbn:String(x.isbn||""),image:String(x.image||""),
+    description:String(x.description||""),
+    value:Number(x.value||0),priceSource:String(x.priceSource||"Product data"),
+    createdAt:Number(x.createdAt||Date.now())
+  }
+}
+function readComicLocal(){try{const r=JSON.parse(localStorage.getItem(COMIC_LOCAL_KEY)||"[]");return Array.isArray(r)?r.map(normalizeComic):[]}catch{return[]}}
+function saveComicLocal(){try{localStorage.setItem(COMIC_LOCAL_KEY,JSON.stringify(comicItems))}catch{}}
+function comicMoney(v){return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(Number(v||0))}
+function comicGo(id){document.querySelectorAll(".comic-screen").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".comic-tab").forEach(x=>x.classList.toggle("active",x.dataset.comicGo===id));if(id!=="comicScan")stopComicScanner();if(id==="comicHome"||id==="comicVault")renderComicAll();window.scrollTo({top:0,behavior:"smooth"})}
+function showComicApp(){
+  activeVaultCategory="comics";$("authGate")?.classList.add("hidden");$("vaultGate")?.classList.add("hidden");$("appShell")?.classList.add("hidden");$("pokemonShell")?.classList.add("hidden");$("funkoShell")?.classList.add("hidden");$("comicShell")?.classList.remove("hidden");
+  comicItems=readComicLocal();startComicCloud().catch(console.warn);renderComicAll();comicGo("comicHome")
+}
+async function startComicCloud(){
+  if(comicCloudUnsub){comicCloudUnsub();comicCloudUnsub=null}
+  if(!currentUser||!firebase?.db)return;
+  const col=firebase.collection(firebase.db,"users",currentUser.uid,"comicItems");
+  comicCloudUnsub=firebase.onSnapshot(col,snap=>{comicItems=snap.docs.map(d=>normalizeComic({id:d.id,...d.data()})).sort((a,b)=>b.createdAt-a.createdAt);saveComicLocal();renderComicAll()},err=>console.warn("Comic sync:",err))
+}
+async function saveComic(item){
+  const c=normalizeComic(item),i=comicItems.findIndex(x=>(c.upc&&x.upc===c.upc&&x.supplement===c.supplement)||(c.isbn&&x.isbn===c.isbn)||x.id===c.id);
+  if(i>=0)comicItems[i]={...comicItems[i],...c};else comicItems.unshift(c);saveComicLocal();renderComicAll();
+  if(currentUser&&firebase?.db){const id=(c.id||c.upc||c.isbn).replace(/[^a-zA-Z0-9._-]/g,"_");await firebase.setDoc(firebase.doc(firebase.db,"users",currentUser.uid,"comicItems",id),c,{merge:true})}
+}
+async function deleteComic(id){const c=comicItems.find(x=>x.id===id);if(!c)return;comicItems=comicItems.filter(x=>x.id!==id);saveComicLocal();renderComicAll();if(currentUser&&firebase?.db)await firebase.deleteDoc(firebase.doc(firebase.db,"users",currentUser.uid,"comicItems",c.id.replace(/[^a-zA-Z0-9._-]/g,"_")));comicGo("comicVault");toast("Comic removed")}
+function comicMarkup(c){return `<button class="comic-item" data-comic-item="${esc(c.id)}" type="button"><img src="${esc(c.image||"/icons/card-placeholder.svg")}" alt=""><strong>${esc(c.title)}</strong><span>${c.issueNumber?`#${esc(c.issueNumber)} • `:""}${esc(c.publisher||"Comic")}</span><span>${comicMoney(c.value)}</span></button>`}
+function renderComicAll(){
+  const total=comicItems.reduce((s,c)=>s+Number(c.value||0),0);$("comicTotalValue").textContent=comicMoney(total);$("comicCount").textContent=comicItems.length;$("comicPublisherCount").textContent=new Set(comicItems.map(c=>c.publisher).filter(Boolean)).size;$("comicKeyCount").textContent=comicItems.filter(c=>c.keyIssue).length;
+  const recent=comicItems.slice().sort((a,b)=>b.createdAt-a.createdAt).slice(0,6);$("comicRecent").innerHTML=recent.map(comicMarkup).join("");$("comicRecentEmpty").classList.toggle("hidden",recent.length>0);
+  const counts=new Map();comicItems.forEach(c=>{if(c.publisher)counts.set(c.publisher,(counts.get(c.publisher)||0)+1)});const top=[...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6);$("comicTopPublishers").innerHTML=top.map(([n,c],i)=>`<div class="comic-rank-row"><strong>${i+1}. ${esc(n)}</strong><span>${c} issue${c===1?"":"s"}</span></div>`).join("")||'<p class="comic-empty">No data yet.</p>';renderComicVault();bindComicItems()
+}
+function renderComicVault(){const q=String($("comicVaultSearch")?.value||"").toLowerCase(),sort=$("comicVaultSort")?.value||"newest";let rows=comicItems.filter(c=>[c.title,c.series,c.issueNumber,c.publisher,c.year,c.variant].join(" ").toLowerCase().includes(q));if(sort==="value-high")rows.sort((a,b)=>b.value-a.value);else if(sort==="title")rows.sort((a,b)=>a.title.localeCompare(b.title));else rows.sort((a,b)=>b.createdAt-a.createdAt);$("comicVaultGrid").innerHTML=rows.map(comicMarkup).join("");$("comicVaultEmpty").classList.toggle("hidden",rows.length>0);bindComicItems()}
+function bindComicItems(){document.querySelectorAll("[data-comic-item]").forEach(b=>b.onclick=()=>openComicDetail(b.dataset.comicItem))}
+function openComicDetail(id){
+  const c=comicItems.find(x=>x.id===id);if(!c)return;$("comicDetailContent").innerHTML=`<div class="comic-detail-card"><img src="${esc(c.image||"/icons/card-placeholder.svg")}" alt=""><div class="comic-detail-meta"><small>${esc(c.publisher||"Comic")}${c.year?` • ${esc(c.year)}`:""}</small><h1>${esc(c.title)}</h1><p>${esc(c.description||c.series)}</p><div class="comic-detail-list"><div><span>ISSUE</span><strong>${esc(c.issueNumber||"—")}</strong></div><div><span>VALUE</span><strong>${comicMoney(c.value)}</strong></div><div><span>UPC</span><strong>${esc(c.upc||"—")}</strong></div><div><span>SUPPLEMENT</span><strong>${esc(c.supplement||"—")}</strong></div><div><span>ISBN</span><strong>${esc(c.isbn||"—")}</strong></div><div><span>VARIANT</span><strong>${esc(c.variant||"—")}</strong></div><div><span>PRINTING</span><strong>${esc(c.printing||"—")}</strong></div><div><span>GRADE</span><strong>${esc([c.gradingCompany,c.grade].filter(Boolean).join(" ")||"Raw / ungraded")}</strong></div></div><button id="comicDeleteCurrent" class="comic-delete" type="button">Remove from Comic Vault</button></div></div>`;$("comicDeleteCurrent").onclick=()=>{if(confirm("Remove this comic from your Vault?"))deleteComic(c.id).catch(()=>toast("Could not remove comic"))};comicGo("comicDetail")
+}
+async function startComicScanner(){
+  if(typeof Html5Qrcode==="undefined"){toast("Camera scanner unavailable — enter barcode manually");return}
+  try{
+    comicHtml5Scanner=new Html5Qrcode("comicHtml5Reader",{formatsToSupport:[Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.UPC_E,Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8],verbose:false});
+    $("comicHtml5Reader").closest(".comic-scanner-card").classList.add("scanning");$("comicStartScanBtn").classList.add("hidden");$("comicStopScanBtn").classList.remove("hidden");$("comicBarcodeSupport").textContent="Point the camera at the main barcode and hold steady.";
+    await comicHtml5Scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:280,height:140}},async text=>{const code=String(text||"").replace(/\D/g,"");if(!/^\d{8,14}$/.test(code))return;$("comicBarcodeInput").value=code;await stopComicScanner();await lookupComicBarcode(code,$("comicSupplementInput").value)},()=>{})
+  }catch(err){console.warn(err);await stopComicScanner();toast("Could not start comic scanner")}
+}
+async function stopComicScanner(){if(comicHtml5Scanner){try{if(comicHtml5Scanner.isScanning)await comicHtml5Scanner.stop()}catch{}try{await comicHtml5Scanner.clear()}catch{}comicHtml5Scanner=null}$("comicHtml5Reader")?.closest(".comic-scanner-card")?.classList.remove("scanning");$("comicStartScanBtn")?.classList.remove("hidden");$("comicStopScanBtn")?.classList.add("hidden")}
+function renderComicResults(rows){
+  $("comicResults").innerHTML=rows.map((c,i)=>`<article class="comic-result"><img src="${esc(c.image||"/icons/card-placeholder.svg")}" alt=""><div><small>${esc(c.publisher||"Comic")}${c.issueNumber?` • #${esc(c.issueNumber)}`:""}</small><strong>${esc(c.title)}</strong><span>${esc(c.year||"")}${c.value?` • ${comicMoney(c.value)}`:""}</span></div><button data-add-comic="${i}" type="button">${comicItems.some(x=>x.id===c.id)?"Saved":"Add"}</button></article>`).join("");
+  document.querySelectorAll("[data-add-comic]").forEach(b=>b.onclick=async()=>{const c=rows[Number(b.dataset.addComic)];await saveComic({...c,createdAt:Date.now()});b.textContent="Saved";toast("Comic added")})
+}
+async function lookupComicBarcode(code,supplement=""){
+  code=String(code||"").replace(/\D/g,"");supplement=String(supplement||"").replace(/\D/g,"").slice(0,5);if(code.length<8){toast("Enter a valid barcode");return}$("comicLookupStatus").textContent="Looking up comic…";$("comicResults").innerHTML="";
+  try{const qs=supplement?`?supplement=${encodeURIComponent(supplement)}`:"";const r=await fetch(`/api/comics/barcode/${encodeURIComponent(code)}${qs}`),d=await r.json();if(!r.ok)throw new Error(d.error||"Not found");const rows=(d.items||[]).map(normalizeComic);$("comicLookupStatus").textContent=rows.length?`${rows.length} match${rows.length===1?"":"es"} • 0 AI calls`:"No barcode match found. Try title/issue search.";renderComicResults(rows)}
+  catch(err){console.warn(err);$("comicLookupStatus").textContent=err.message||"No barcode match found.";renderComicResults([])}
+}
+async function searchComics(title,issue,publisher){
+  title=String(title||"").trim();issue=String(issue||"").trim();publisher=String(publisher||"").trim();if(title.length<2){toast("Enter a comic title");return}$("comicLookupStatus").textContent="Searching comics…";$("comicResults").innerHTML="";
+  try{const q=new URLSearchParams({title});if(issue)q.set("issue",issue);if(publisher)q.set("publisher",publisher);const r=await fetch(`/api/comics/search?${q}`),d=await r.json();if(!r.ok)throw new Error(d.error||"Search failed");const rows=(d.items||[]).map(normalizeComic);$("comicLookupStatus").textContent=rows.length?`${rows.length} match${rows.length===1?"":"es"} • 0 AI calls`:"No matches found. Try fewer details.";renderComicResults(rows)}
+  catch(err){console.warn(err);$("comicLookupStatus").textContent=err.message||"Comic search failed."}
+}
+document.querySelectorAll("[data-comic-go]").forEach(b=>b.addEventListener("click",()=>comicGo(b.dataset.comicGo)));
+$("comicBackVaults")?.addEventListener("click",()=>{stopComicScanner();showVaultSelector()});
+$("comicProfileShortcut")?.addEventListener("click",()=>{stopComicScanner();showApp();go("profile")});
+$("comicStartScanBtn")?.addEventListener("click",startComicScanner);$("comicStopScanBtn")?.addEventListener("click",()=>stopComicScanner());
+$("comicBarcodeForm")?.addEventListener("submit",e=>{e.preventDefault();lookupComicBarcode($("comicBarcodeInput").value,$("comicSupplementInput").value)});
+$("comicSearchForm")?.addEventListener("submit",e=>{e.preventDefault();searchComics($("comicSearchTitle").value,$("comicSearchIssue").value,$("comicSearchPublisher").value)});
+$("comicVaultSearch")?.addEventListener("input",renderComicVault);$("comicVaultSort")?.addEventListener("change",renderComicVault);$("comicDetailBack")?.addEventListener("click",()=>comicGo("comicVault"));
+
 function showAuthGate(){
   $("authGate").classList.remove("hidden");
   $("vaultGate")?.classList.add("hidden");
   $("pokemonShell")?.classList.add("hidden");
   $("funkoShell")?.classList.add("hidden");
+  $("comicShell")?.classList.add("hidden");
   $("appShell").classList.add("hidden");
 }
 function showApp(){
@@ -692,6 +782,7 @@ function showApp(){
   $("vaultGate")?.classList.add("hidden");
   $("pokemonShell")?.classList.add("hidden");
   $("funkoShell")?.classList.add("hidden");
+  $("comicShell")?.classList.add("hidden");
   $("appShell").classList.remove("hidden");
   activeVaultCategory="sports";
   const meta=vaultMeta(activeVaultCategory);

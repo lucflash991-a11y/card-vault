@@ -72,12 +72,12 @@
           <span class="vault-choice-arrow">›</span>
         </button>
 
-        <button class="vault-choice upcoming" data-vault-choice="comics" type="button">
+        <button class="vault-choice live comics-live" data-vault-choice="comics" type="button">
           <span class="vault-choice-icon">CM</span>
           <span class="vault-choice-copy">
-            <small>COMING SOON</small>
+            <small>LIVE • BARCODE FIRST</small>
             <strong>Comics</strong>
-            <em>Barcode-first comic identification planned</em>
+            <em>UPC / ISBN lookup, issue tracking and separate Comic Vault</em>
           </span>
           <span class="vault-choice-arrow">›</span>
         </button>
@@ -254,6 +254,106 @@
       <section id="funkoDetail" class="funko-screen"><button id="funkoDetailBack" class="funko-inline-back" type="button">‹ Back</button><div id="funkoDetailContent"></div></section>
     </main>
     <nav class="funko-nav"><button class="funko-tab active" data-funko-go="funkoHome" type="button"><span>⌂</span><b>Home</b></button><button class="funko-tab" data-funko-go="funkoScan" type="button"><span>▥</span><b>Scan</b></button><button class="funko-tab" data-funko-go="funkoVault" type="button"><span>▦</span><b>Vault</b></button><button class="funko-tab" data-funko-go="funkoDiscover" type="button"><span>◎</span><b>Discover</b></button></nav>
+  </div>
+
+
+  <div id="comicShell" class="comic-shell hidden">
+    <header class="comic-topbar">
+      <button id="comicBackVaults" class="comic-back" type="button"><span>‹</span><b>Vaults</b></button>
+      <div class="comic-brand"><span>CM</span><div><small>CARD VAULT</small><strong>Comics</strong></div></div>
+      <button id="comicProfileShortcut" class="comic-profile" type="button">CV</button>
+    </header>
+
+    <main class="comic-main">
+      <section id="comicHome" class="comic-screen active">
+        <div class="comic-hero">
+          <div><small>COMIC VAULT</small><h1>Your comics.</h1><p>Barcode-first cataloging without mixing Comics into your other vaults.</p></div>
+          <button class="comic-primary" data-comic-go="comicScan" type="button">Scan comic</button>
+        </div>
+
+        <div class="comic-stats">
+          <article><small>COLLECTION VALUE</small><strong id="comicTotalValue">$0</strong></article>
+          <article><small>COMICS</small><strong id="comicCount">0</strong></article>
+          <article><small>PUBLISHERS</small><strong id="comicPublisherCount">0</strong></article>
+          <article><small>KEY ISSUES</small><strong id="comicKeyCount">0</strong></article>
+        </div>
+
+        <section class="comic-section">
+          <div class="comic-section-head"><div><small>RECENT</small><h2>Recently added</h2></div><button data-comic-go="comicVault" type="button">View Vault</button></div>
+          <div id="comicRecent" class="comic-grid"></div>
+          <p id="comicRecentEmpty" class="comic-empty">No comics yet. Scan a barcode or search by title and issue.</p>
+        </section>
+
+        <section class="comic-section">
+          <div class="comic-section-head"><div><small>COLLECTION</small><h2>Top publishers</h2></div></div>
+          <div id="comicTopPublishers" class="comic-ranking"></div>
+        </section>
+      </section>
+
+      <section id="comicScan" class="comic-screen">
+        <div class="comic-page-title"><small>BARCODE FIRST</small><h1>Scan the comic.</h1><p>For modern comics, scan the UPC/EAN on the cover. ISBN also works well for collected editions and graphic novels.</p></div>
+
+        <div class="comic-scanner-card">
+          <div id="comicHtml5Reader" class="comic-reader"></div>
+          <div id="comicScannerPlaceholder" class="comic-scanner-placeholder">
+            <span>▥</span><strong>Comic Barcode Scanner</strong><p>UPC-A, UPC-E, EAN-13 and EAN-8. Camera decoding stays local.</p>
+          </div>
+          <div class="comic-scan-actions">
+            <button id="comicStartScanBtn" class="comic-primary wide" type="button">Start Camera Scanner</button>
+            <button id="comicStopScanBtn" class="comic-secondary wide hidden" type="button">Stop Camera</button>
+          </div>
+          <p id="comicBarcodeSupport" class="comic-support-note">Ready to scan.</p>
+        </div>
+
+        <div class="comic-divider"><span>OR ENTER BARCODE / ISBN</span></div>
+        <form id="comicBarcodeForm" class="comic-form">
+          <label>UPC / EAN / ISBN<input id="comicBarcodeInput" inputmode="numeric" autocomplete="off" placeholder="Enter barcode"></label>
+          <label>5-digit comic supplement <span class="comic-optional">optional</span><input id="comicSupplementInput" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="e.g. 01511"></label>
+          <button class="comic-primary wide" type="submit">Look Up Comic</button>
+        </form>
+
+        <div class="comic-divider"><span>OR SEARCH MANUALLY</span></div>
+        <form id="comicSearchForm" class="comic-form">
+          <label>Comic title<input id="comicSearchTitle" type="search" autocomplete="off" placeholder="e.g. Amazing Spider-Man"></label>
+          <div class="comic-search-row">
+            <label>Issue #<input id="comicSearchIssue" type="text" autocomplete="off" placeholder="e.g. 26"></label>
+            <label>Publisher <span class="comic-optional">optional</span><input id="comicSearchPublisher" type="text" autocomplete="off" placeholder="e.g. Marvel"></label>
+          </div>
+          <button class="comic-secondary wide" type="submit">Search Comics</button>
+        </form>
+
+        <div class="comic-api-note"><strong>0 AI calls</strong><span>Barcode/title lookup does not use Gemini.</span></div>
+        <div id="comicLookupStatus" class="comic-status"></div>
+        <div id="comicResults" class="comic-results"></div>
+      </section>
+
+      <section id="comicVault" class="comic-screen">
+        <div class="comic-page-title"><small>COMIC VAULT</small><h1>Your issues.</h1><p>Separate from Sports, Pokémon and Funko.</p></div>
+        <div class="comic-vault-tools">
+          <input id="comicVaultSearch" type="search" placeholder="Search title, issue, publisher…">
+          <select id="comicVaultSort"><option value="newest">Newest</option><option value="value-high">Value: high to low</option><option value="title">Title A–Z</option></select>
+        </div>
+        <div id="comicVaultGrid" class="comic-grid"></div>
+        <p id="comicVaultEmpty" class="comic-empty">Your Comic Vault is empty.</p>
+      </section>
+
+      <section id="comicDiscover" class="comic-screen">
+        <div class="comic-page-title"><small>COMIC DISCOVER</small><h1>Comics only.</h1><p>Comic public Market/Discover stays isolated from the other collectible categories and will be expanded later.</p></div>
+        <div class="comic-coming"><span>CM</span><div><strong>Comic Vault is live.</strong><p>Cataloging works now; category-specific social publishing comes in a later pass.</p></div></div>
+      </section>
+
+      <section id="comicDetail" class="comic-screen">
+        <button id="comicDetailBack" class="comic-inline-back" type="button">‹ Back</button>
+        <div id="comicDetailContent"></div>
+      </section>
+    </main>
+
+    <nav class="comic-nav">
+      <button class="comic-tab active" data-comic-go="comicHome" type="button"><span>⌂</span><b>Home</b></button>
+      <button class="comic-tab" data-comic-go="comicScan" type="button"><span>▥</span><b>Scan</b></button>
+      <button class="comic-tab" data-comic-go="comicVault" type="button"><span>▦</span><b>Vault</b></button>
+      <button class="comic-tab" data-comic-go="comicDiscover" type="button"><span>◎</span><b>Discover</b></button>
+    </nav>
   </div>
 
   <div id="appShell" class="app-shell hidden">
@@ -852,7 +952,7 @@
         </div>
 
         <p class="settings-footnote">Platform features live in Discover. Your Home stays personal and clean.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.2.2</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.3.0</p>
       </section>
     </main>
 
@@ -932,6 +1032,6 @@
 <div id="toast" class="toast hidden" aria-live="polite"></div>
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <script type="module" src="/app.js?v=322"></script>
+  <script type="module" src="/app.js?v=330"></script>
 </body>
 </html>

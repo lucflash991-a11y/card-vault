@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"3.2.2"});
+  res.json({version:"3.3.0"});
 });
 
 app.use((req,res,next)=>{
@@ -146,6 +146,82 @@ function getFirebaseConfig(){
 
 
 
+
+
+const comicLookupCache=new Map();
+const COMIC_CACHE_MS=24*60*60*1000;
+
+function normalizeComicProduct(p={},extra={}){
+  const title=String(p.title||p.name||"Unknown Comic");
+  const images=Array.isArray(p.images)?p.images.filter(Boolean):[];
+  const offers=Array.isArray(p.offers)?p.offers.filter(o=>Number(o?.price)>0):[];
+  const prices=offers.map(o=>Number(o.price)).filter(v=>Number.isFinite(v)&&v>0).sort((a,b)=>a-b);
+  const value=prices.length?prices[Math.floor(prices.length/2)]:Number(p.lowest_recorded_price||0)||0;
+  const issueMatch=title.match(/(?:#|Issue\s*)([0-9A-Za-z.\-]+)/i);
+  return {
+    id:String(extra.id||p.upc||p.ean||p.isbn||`${Date.now()}-${Math.random()}`),
+    title,
+    series:String(extra.series||title.replace(/\s+#?\d+.*$/,"").trim()),
+    issueNumber:String(extra.issueNumber||issueMatch?.[1]||""),
+    publisher:String(extra.publisher||p.brand||""),
+    year:String(extra.year||""),
+    upc:String(extra.upc||p.upc||p.ean||""),
+    supplement:String(extra.supplement||""),
+    isbn:String(extra.isbn||""),
+    image:String(extra.image||images[0]||""),
+    description:String(extra.description||p.description||""),
+    value,
+    priceSource:prices.length?"UPCitemdb current offers":"UPCitemdb product data"
+  };
+}
+async function openLibraryIsbn(isbn){
+  const r=await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(isbn)}&jscmd=data&format=json`,{headers:{"Accept":"application/json","User-Agent":"CardVault/3.3.0"}});
+  if(!r.ok)return null;const d=await r.json(),b=d[`ISBN:${isbn}`];if(!b)return null;
+  return {
+    id:`isbn-${isbn}`,title:String(b.title||"Unknown Comic"),series:String(b.title||""),
+    issueNumber:"",publisher:String(b.publishers?.[0]?.name||""),year:String(b.publish_date||""),
+    upc:"",supplement:"",isbn,image:String(b.cover?.large||b.cover?.medium||b.cover?.small||""),
+    description:"Collected edition / graphic novel",value:0,priceSource:"Open Library"
+  }
+}
+app.get("/api/comics/barcode/:code",async(req,res)=>{
+  try{
+    let code=String(req.params.code||"").replace(/\D/g,""),supplement=String(req.query.supplement||"").replace(/\D/g,"").slice(0,5);
+    if(!/^\d{8,14}$/.test(code))return res.status(400).json({error:"Invalid barcode"});
+    const key=`b:${code}:${supplement}`,cached=comicLookupCache.get(key);if(cached&&Date.now()-cached.savedAt<COMIC_CACHE_MS)return res.json({...cached.data,cached:true});
+    const items=[];
+
+    // ISBN-13/10 first for graphic novels/trades.
+    if(code.length===10||code.startsWith("978")||code.startsWith("979")){
+      const ol=await openLibraryIsbn(code);if(ol)items.push(ol)
+    }
+
+    // UPCitemdb for standard UPC/EAN comic products.
+    if(!items.length){
+      let data;
+      try{data=await upcItemdbJson(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(code)}`)}
+      catch(err){
+        if(code.length===13&&code.startsWith("0")){code=code.slice(1);data=await upcItemdbJson(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(code)}`)}else throw err
+      }
+      const rows=Array.isArray(data.items)?data.items:[];
+      rows.forEach((p,i)=>items.push(normalizeComicProduct(p,{id:`${code}-${supplement||i}`,upc:code,supplement})))
+    }
+    if(!items.length)return res.status(404).json({error:"No comic found for that barcode"});
+    const payload={items,source:items[0]?.isbn?"Open Library":"UPCitemdb",aiUsed:false};comicLookupCache.set(key,{savedAt:Date.now(),data:payload});res.json(payload)
+  }catch(err){console.error("Comic barcode:",err);res.status(err.code||502).json({error:err.message||"Comic barcode lookup failed"})}
+});
+app.get("/api/comics/search",async(req,res)=>{
+  try{
+    const title=String(req.query.title||"").trim().slice(0,100),issue=String(req.query.issue||"").trim().slice(0,20),publisher=String(req.query.publisher||"").trim().slice(0,60);
+    if(title.length<2)return res.status(400).json({error:"Search is too short"});
+    const phrase=[title,issue?`#${issue}`:"",publisher,"comic"].filter(Boolean).join(" ");
+    const key=`s:${phrase.toLowerCase()}`,cached=comicLookupCache.get(key);if(cached&&Date.now()-cached.savedAt<COMIC_CACHE_MS)return res.json({...cached.data,cached:true});
+    const data=await upcItemdbJson(`https://api.upcitemdb.com/prod/trial/search?s=${encodeURIComponent(phrase)}&type=product&match_mode=0`);
+    const rows=Array.isArray(data.items)?data.items:[];
+    const items=rows.slice(0,10).map((p,i)=>normalizeComicProduct(p,{id:`search-${p.upc||i}`,issueNumber:issue,publisher:publisher||p.brand||""}));
+    const payload={items,source:"UPCitemdb",aiUsed:false};comicLookupCache.set(key,{savedAt:Date.now(),data:payload});res.json(payload)
+  }catch(err){console.error("Comic search:",err);res.status(err.code||502).json({error:err.message||"Comic search failed"})}
+});
 
 const funkoLookupCache=new Map();
 const FUNKO_CACHE_MS=24*60*60*1000;
@@ -619,5 +695,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v3.2.2 running on port ${port}`);
+  console.log(`Card Vault v3.3.0 running on port ${port}`);
 });

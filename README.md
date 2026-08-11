@@ -1,10 +1,10 @@
-# Card Vault v3.2.2 — Funko Lookup Fix
+# Card Vault v3.3.0 — Comics Barcode Vault
 
 Card Vault started as a sports-card scanner and collection tracker. v3.0 begins the transition into a **multi-collectible platform** while keeping every collectible category separated.
 
 ## Current Build
 
-**v3.2.2**
+**v3.3.0**
 
 Built from the stable **v2.4.2 Trade / Sale Flow Hotfix** baseline.
 
@@ -684,7 +684,7 @@ v3.0.0 does **not** require new Firestore rules beyond the rules already used by
 After deploying v3.0.2, verify:
 
 ```text
-BUILD v3.2.2
+BUILD v3.3.0
 ```
 
 in Card Vault.
@@ -713,3 +713,55 @@ Fix:
 - valid barcode hits are no longer discarded because the product title is formatted differently
 - name results are ranked toward Funko products instead of hard-filtered away
 - still 0 Gemini calls
+
+
+## v3.3.0 — Comics Barcode Vault
+
+Comics is now the fourth active Card Vault category.
+
+### Comic Scanner
+- iPhone/Safari camera barcode scanner
+- UPC-A / UPC-E / EAN-13 / EAN-8
+- manual UPC / EAN / ISBN entry
+- optional 5-digit comic supplemental code
+- 0 Gemini calls for normal barcode lookup
+
+### Comic Lookup
+- UPC/EAN product lookup through UPCitemdb
+- ISBN lookup through Open Library for collected editions / graphic novels
+- title + issue + publisher product search fallback
+- 24-hour server cache
+
+### Comic Vault
+Separate cloud storage:
+
+```text
+users/{uid}/comicItems/{itemId}
+```
+
+Comic schema includes:
+- title / series
+- issue number
+- publisher
+- year / volume
+- variant / printing
+- cover artist
+- key issue flag / note
+- raw or graded info
+- UPC
+- 5-digit supplemental barcode
+- ISBN
+- image
+- value
+
+### Comic Home
+- collection value
+- comic count
+- publisher count
+- key issue count
+- recent issues
+- top publishers
+
+### Important
+v3.3.0 is barcode-first. It does not use Gemini for the normal Comic workflow.
+A later Comic update can add cover-photo AI as the fallback for older comics or missing database records.
