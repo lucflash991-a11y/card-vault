@@ -1,10 +1,10 @@
-# Card Vault v3.3.3 — Strong Comic Matcher
+# Card Vault v3.3.4 — Metron Primary Comics
 
 Card Vault started as a sports-card scanner and collection tracker. v3.0 begins the transition into a **multi-collectible platform** while keeping every collectible category separated.
 
 ## Current Build
 
-**v3.3.3**
+**v3.3.4**
 
 Built from the stable **v2.4.2 Trade / Sale Flow Hotfix** baseline.
 
@@ -684,7 +684,7 @@ v3.0.0 does **not** require new Firestore rules beyond the rules already used by
 After deploying v3.0.2, verify:
 
 ```text
-BUILD v3.3.3
+BUILD v3.3.4
 ```
 
 in Card Vault.
@@ -881,3 +881,20 @@ Comics now store:
 
 ### AI usage
 Cover-photo matching can use two Gemini calls: one to read the comic identity and one to visually rank candidate covers. Manual title/issue search still uses zero Gemini calls.
+
+
+## v3.3.4 — Metron Primary Comics
+
+- Metron uses `METRON_USER` and `METRON_PASS` from Render, server-side only.
+- Comic Scan shows whether Metron is connected.
+- Metron is the primary title/issue database; GCD is fallback/enrichment.
+- Strict title/issue/year/publisher searches automatically relax year/publisher if needed.
+- Main barcode scanning no longer triggers a premature guess.
+- Modern comics wait for the 5-digit supplemental barcode.
+- Main UPC + supplement are combined and sent to Metron's exact UPC filter.
+- Exact full UPC matches are ranked at 99%.
+- Old barcode values clear after every lookup.
+- Cover-photo identification searches Metron first and supports up to four alternate database title spellings.
+- Candidate covers are visually compared with the uploaded cover photo.
+- Metron cover images are preferred when available.
+- No new Firebase rules.

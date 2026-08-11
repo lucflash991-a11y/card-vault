@@ -716,8 +716,8 @@ function readComicLocal(){try{const r=JSON.parse(localStorage.getItem(COMIC_LOCA
 function saveComicLocal(){try{localStorage.setItem(COMIC_LOCAL_KEY,JSON.stringify(comicItems))}catch{}}
 
 function comicCoverSrc(c){
-  if(c?.gcdId)return `/api/comics/cover/${encodeURIComponent(c.gcdId)}`;
   if(c?.image)return c.image;
+  if(c?.gcdId)return `/api/comics/cover/${encodeURIComponent(c.gcdId)}`;
   if(c?.userCoverImage)return c.userCoverImage;
   return "/icons/card-placeholder.svg";
 }
@@ -726,11 +726,20 @@ function comicCoverFallback(img,c){
   if(c?.userCoverImage&&img.src!==c.userCoverImage){img.onerror=null;img.src=c.userCoverImage;return}
   img.onerror=null;img.src="/icons/card-placeholder.svg";
 }
+async function checkComicMetron(){
+  const box=$("comicMetronStatus");if(!box)return;
+  box.classList.remove("ok","bad");box.querySelector("strong").textContent="Checking Metron…";box.querySelector("em").textContent="";
+  try{
+    const r=await fetch("/api/comics/metron-status"),d=await r.json();
+    if(d.ok){box.classList.add("ok");box.querySelector("strong").textContent="Metron connected";box.querySelector("em").textContent=d.remaining?`${d.remaining} requests left`:"Primary database";}
+    else{box.classList.add("bad");box.querySelector("strong").textContent="Metron not connected";box.querySelector("em").textContent=d.error||"Check Render variables";}
+  }catch{box.classList.add("bad");box.querySelector("strong").textContent="Metron status unavailable";}
+}
 function comicMoney(v){return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(Number(v||0))}
 function comicGo(id){document.querySelectorAll(".comic-screen").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".comic-tab").forEach(x=>x.classList.toggle("active",x.dataset.comicGo===id));if(id!=="comicScan")stopComicScanner();if(id==="comicHome"||id==="comicVault")renderComicAll();window.scrollTo({top:0,behavior:"smooth"})}
 function showComicApp(){
   activeVaultCategory="comics";$("authGate")?.classList.add("hidden");$("vaultGate")?.classList.add("hidden");$("appShell")?.classList.add("hidden");$("pokemonShell")?.classList.add("hidden");$("funkoShell")?.classList.add("hidden");$("comicShell")?.classList.remove("hidden");
-  comicItems=readComicLocal();startComicCloud().catch(console.warn);renderComicAll();comicGo("comicHome")
+  comicItems=readComicLocal();startComicCloud().catch(console.warn);renderComicAll();checkComicMetron();comicGo("comicHome")
 }
 async function startComicCloud(){
   if(comicCloudUnsub){comicCloudUnsub();comicCloudUnsub=null}
@@ -773,8 +782,21 @@ async function startComicScanner(){
   if(typeof Html5Qrcode==="undefined"){toast("Camera scanner unavailable — enter barcode manually");return}
   try{
     comicHtml5Scanner=new Html5Qrcode("comicHtml5Reader",{formatsToSupport:[Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.UPC_E,Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8],verbose:false});
-    $("comicHtml5Reader").closest(".comic-scanner-card").classList.add("scanning");$("comicStartScanBtn").classList.add("hidden");$("comicStopScanBtn").classList.remove("hidden");$("comicBarcodeSupport").textContent="Point the camera at the main barcode and hold steady.";
-    await comicHtml5Scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:280,height:140}},async text=>{const code=String(text||"").replace(/\D/g,"");if(!/^\d{8,14}$/.test(code))return;$("comicBarcodeInput").value=code;await stopComicScanner();await lookupComicBarcode(code,$("comicSupplementInput").value)},()=>{})
+    $("comicHtml5Reader").closest(".comic-scanner-card").classList.add("scanning");
+    $("comicStartScanBtn").classList.add("hidden");$("comicStopScanBtn").classList.remove("hidden");
+    $("comicBarcodeSupport").textContent="Scan the large/main barcode. Card Vault will wait for the 5-digit supplement before exact matching.";
+    await comicHtml5Scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:280,height:140}},async text=>{
+      const code=String(text||"").replace(/\D/g,"");if(!/^\d{8,17}$/.test(code))return;
+      await stopComicScanner();
+      if(code.length>14){
+        const main=code.slice(0,-5),supp=code.slice(-5);
+        $("comicBarcodeInput").value=main;$("comicSupplementInput").value=supp;
+        $("comicBarcodeSupport").innerHTML=`<div class="comic-barcode-captured"><strong>Full comic barcode captured</strong>${main} + ${supp}</div>`;
+        await lookupComicBarcode(main,supp);return;
+      }
+      $("comicBarcodeInput").value=code;$("comicSupplementInput").focus();
+      $("comicBarcodeSupport").innerHTML=`<div class="comic-barcode-captured"><strong>Main barcode captured: ${code}</strong>Enter the small 5-digit barcode beside it, then tap Exact Metron Barcode Lookup.</div>`;
+    },()=>{})
   }catch(err){console.warn(err);await stopComicScanner();toast("Could not start comic scanner")}
 }
 async function stopComicScanner(){if(comicHtml5Scanner){try{if(comicHtml5Scanner.isScanning)await comicHtml5Scanner.stop()}catch{}try{await comicHtml5Scanner.clear()}catch{}comicHtml5Scanner=null}$("comicHtml5Reader")?.closest(".comic-scanner-card")?.classList.remove("scanning");$("comicStartScanBtn")?.classList.remove("hidden");$("comicStopScanBtn")?.classList.add("hidden")}
@@ -790,28 +812,22 @@ function clearComicScanFields(){
 }
 async function lookupComicBarcode(code,supplement=""){
   code=String(code||"").replace(/\D/g,"");supplement=String(supplement||"").replace(/\D/g,"").slice(0,5);
-  if(code.length<8){toast("Enter a valid barcode");return}
-  $("comicLookupStatus").textContent="Checking barcode against comic records…";$("comicResults").innerHTML="";
+  if(code.length<8){toast("Enter a valid main barcode");return}
+  if(!supplement&&code.length<=14){$("comicLookupStatus").textContent="Enter the small 5-digit supplement for an exact modern comic match.";$("comicSupplementInput").focus();return}
+  $("comicLookupStatus").textContent="Running exact Metron UPC lookup…";$("comicResults").innerHTML="";
   try{
     const q=new URLSearchParams({barcode:code});if(supplement)q.set("supplement",supplement);
-    const r=await fetch(`/api/comics/gcd/barcode?${q}`),d=await r.json();
-    if(!r.ok)throw new Error(d.error||"Barcode not found");
+    const r=await fetch(`/api/comics/metron-barcode?${q}`),d=await r.json();if(!r.ok)throw new Error(d.error||"Barcode not found");
     const rows=(d.items||[]).map(normalizeComic);
-    $("comicLookupStatus").textContent=rows.length?`${rows.length} GCD match${rows.length===1?"":"es"} found. Confirm the cover before adding.`:"No exact GCD barcode match. Use a cover photo or title + issue search.";
+    $("comicLookupStatus").textContent=rows.length?"Exact Metron match found. Confirm the cover before adding.":"No exact Metron match. Try a cover photo.";
     renderComicResults(rows);
-  }catch(err){
-    console.warn(err);
-    $("comicLookupStatus").textContent=err.message||"No exact barcode match. Take a cover photo instead.";
-    renderComicResults([]);
-  }finally{
-    // Never leave an old barcode sitting in the form.
-    $("comicBarcodeInput").value="";$("comicSupplementInput").value="";
-  }
+  }catch(err){console.warn(err);$("comicLookupStatus").textContent=err.message||"No exact Metron match. Try the cover-photo identifier.";renderComicResults([])}
+  finally{$("comicBarcodeInput").value="";$("comicSupplementInput").value=""}
 }
 async function searchComics(title,issue,publisher){
   title=String(title||"").trim();issue=String(issue||"").trim();publisher=String(publisher||"").trim();
   if(title.length<2||!issue){toast("Enter the title and issue number");return}
-  $("comicLookupStatus").textContent="Searching Grand Comics Database…";$("comicResults").innerHTML="";
+  $("comicLookupStatus").textContent="Searching Metron first, then GCD fallback…";$("comicResults").innerHTML="";
   try{
     const q=new URLSearchParams({title,issue});if(publisher)q.set("publisher",publisher);
     const r=await fetch(`/api/comics/search-strong?${q}`),d=await r.json();
@@ -823,7 +839,7 @@ async function searchComics(title,issue,publisher){
 }
 async function analyzeComicCover(){
   if(!comicCoverData){toast("Take or choose a cover photo first");return}
-  const btn=$("comicAnalyzeCoverBtn");btn.disabled=true;btn.textContent="Identifying…";$("comicLookupStatus").textContent="Reading cover, then verifying with GCD…";$("comicResults").innerHTML="";
+  const btn=$("comicAnalyzeCoverBtn");btn.disabled=true;btn.textContent="Identifying…";$("comicLookupStatus").textContent="Reading cover, searching Metron, then visually comparing candidate covers…";$("comicResults").innerHTML="";
   try{
     const r=await fetch("/api/comics/identify-cover",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:comicCoverData})});
     const d=await r.json();if(!r.ok)throw new Error(d.error||"Cover identification failed");

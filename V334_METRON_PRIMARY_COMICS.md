@@ -1,0 +1,1 @@
+Card Vault v3.3.4: Metron-primary comic lookup, exact full UPC + supplement matching, connection status, stronger photo candidate search, GCD fallback, no Firebase rule changes.

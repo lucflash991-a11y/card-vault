@@ -318,8 +318,8 @@
         <div class="comic-divider"><span>OR ENTER BARCODE / ISBN</span></div>
         <form id="comicBarcodeForm" class="comic-form">
           <label>UPC / EAN / ISBN<input id="comicBarcodeInput" inputmode="numeric" autocomplete="off" placeholder="Enter barcode"></label>
-          <label>5-digit comic supplement <span class="comic-optional">optional</span><input id="comicSupplementInput" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="e.g. 01511"></label>
-          <button class="comic-primary wide" type="submit">Search / Verify Barcode</button>
+          <label>5-digit comic supplement <span class="comic-required">needed for exact modern comic match</span><input id="comicSupplementInput" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="e.g. 00111"></label>
+          <button class="comic-primary wide" type="submit">Exact Metron Barcode Lookup</button>
         </form>
 
         <div class="comic-divider"><span>SEARCH GCD MANUALLY</span></div>
@@ -333,6 +333,7 @@
         </form>
 
         <div class="comic-api-note"><strong>STRONG MATCHER</strong><span>GCD + optional Metron + visual cover ranking. Results show confidence so you choose the exact issue before saving.</span></div>
+        <div id="comicMetronStatus" class="comic-metron-status"><span class="comic-metron-dot"></span><strong>Checking Metron…</strong><em></em></div>
         <div id="comicLookupStatus" class="comic-status"></div>
         <div id="comicResults" class="comic-results"></div>
       </section>
@@ -962,7 +963,7 @@
         </div>
 
         <p class="settings-footnote">Platform features live in Discover. Your Home stays personal and clean.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.3.3</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.3.4</p>
       </section>
     </main>
 
@@ -1042,6 +1043,6 @@
 <div id="toast" class="toast hidden" aria-live="polite"></div>
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <script type="module" src="/app.js?v=333"></script>
+  <script type="module" src="/app.js?v=334"></script>
 </body>
 </html>
