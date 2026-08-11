@@ -1,10 +1,10 @@
-# Card Vault v3.3.2 — Comic Cover Image Fix
+# Card Vault v3.3.3 — Strong Comic Matcher
 
 Card Vault started as a sports-card scanner and collection tracker. v3.0 begins the transition into a **multi-collectible platform** while keeping every collectible category separated.
 
 ## Current Build
 
-**v3.3.2**
+**v3.3.3**
 
 Built from the stable **v2.4.2 Trade / Sale Flow Hotfix** baseline.
 
@@ -684,7 +684,7 @@ v3.0.0 does **not** require new Firestore rules beyond the rules already used by
 After deploying v3.0.2, verify:
 
 ```text
-BUILD v3.3.2
+BUILD v3.3.3
 ```
 
 in Card Vault.
@@ -832,3 +832,52 @@ Fix:
 - covers are cached for 24 hours
 - search results, Comic Vault cards and Comic Detail all use the proxy
 
+
+
+## v3.3.3 — Strong Comic Matcher
+
+Major Comics matching upgrade.
+
+### Visual candidate ranking
+Cover-photo identification now has two stages:
+1. Gemini reads the visible series / issue / publisher / year / variant clues.
+2. Card Vault retrieves candidate comic records and visually compares the real candidate cover scans to the user's photo.
+
+Results are ranked with a visible match percentage and short reason.
+
+### Multi-source metadata
+- Grand Comics Database remains the no-setup primary source.
+- Metron is automatically added as a second source when a Metron API token or username/password is configured on Render.
+- candidates from both sources are merged and deduplicated.
+- GCD IDs are used to merge equivalent Metron/GCD records when available.
+
+Optional Render variables:
+```text
+METRON_TOKEN=your_revocable_metron_api_token
+```
+Or legacy Basic Auth:
+```text
+METRON_USER=your_username
+METRON_PASS=your_password
+```
+Card Vault still works without any Metron credentials.
+
+### Better cover reliability
+- real database cover is preferred
+- uploaded user cover photo is preserved as a fallback
+- if a remote/database cover fails, Card Vault displays the user's own comic photo instead of the generic Card Vault placeholder
+
+### Strong manual search
+Manual title + issue search now uses the same merged candidate system and confidence scoring.
+
+### Saved match provenance
+Comics now store:
+- source
+- GCD ID
+- Metron ID when available
+- match confidence
+- match reason
+- user cover fallback photo
+
+### AI usage
+Cover-photo matching can use two Gemini calls: one to read the comic identity and one to visually rank candidate covers. Manual title/issue search still uses zero Gemini calls.

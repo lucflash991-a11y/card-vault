@@ -879,3 +879,14 @@ body.modal-open{
 .comic-result{grid-template-columns:82px 1fr auto}.comic-result img{width:82px;aspect-ratio:2/3;object-fit:cover}
 .comic-result .comic-result-meta{display:grid;gap:2px}.comic-result .comic-gcd-tag{display:inline-block;width:max-content;padding:3px 5px;border-radius:6px;background:var(--surface-2);font-size:6px!important;font-weight:900}
 .comic-detail-price-panel{border:1px solid var(--line);background:var(--surface-2);border-radius:15px;padding:10px;margin-top:10px}.comic-detail-price-panel label{font-size:7px;font-weight:900;color:var(--muted)}.comic-detail-price-row{display:grid;grid-template-columns:1fr auto;gap:7px;margin-top:6px}.comic-detail-price-row input{width:100%;box-sizing:border-box;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:11px;padding:9px;font-size:9px}.comic-detail-price-row button{border:0;background:var(--ink);color:var(--bg);border-radius:11px;padding:9px;font-size:7px;font-weight:900}.comic-price-note{font-size:7px;color:var(--muted);line-height:1.4;margin:7px 0 0}
+
+/* v3.3.3 strong comic matcher */
+.comic-result{grid-template-columns:96px 1fr auto;align-items:stretch}
+.comic-result img{width:96px;height:144px;aspect-ratio:auto;object-fit:cover;background:var(--surface-2)}
+.comic-result-meta{align-content:center}
+.comic-match-line{display:flex!important;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:3px}
+.comic-match-score{display:inline-flex!important;align-items:center;width:max-content;padding:4px 6px;border-radius:7px;background:var(--ink);color:var(--bg)!important;font-size:7px!important;font-weight:1000!important}
+.comic-source-badge{display:inline-flex!important;width:max-content;padding:4px 6px;border-radius:7px;background:var(--surface-2);color:var(--muted)!important;font-size:6px!important;font-weight:900!important}
+.comic-match-reason{white-space:normal!important;line-height:1.35;margin-top:3px!important;max-width:340px}
+.comic-result button{align-self:center}
+@media(max-width:520px){.comic-result{grid-template-columns:78px 1fr}.comic-result img{width:78px;height:117px}.comic-result>button{grid-column:1/-1;width:100%}}

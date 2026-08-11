@@ -684,7 +684,7 @@ async function searchFunkoName(q){q=String(q||"").trim();if(q.length<2){toast("E
 document.querySelectorAll("[data-funko-go]").forEach(b=>b.addEventListener("click",()=>funkoGo(b.dataset.funkoGo)));$("funkoBackVaults")?.addEventListener("click",()=>{stopFunkoScanner();showVaultSelector()});$("funkoProfileShortcut")?.addEventListener("click",()=>{stopFunkoScanner();showApp();go("profile")});$("funkoStartScanBtn")?.addEventListener("click",startFunkoScanner);$("funkoStopScanBtn")?.addEventListener("click",()=>stopFunkoScanner());$("funkoBarcodeForm")?.addEventListener("submit",e=>{e.preventDefault();lookupFunkoBarcode($("funkoBarcodeInput").value)});$("funkoSearchForm")?.addEventListener("submit",e=>{e.preventDefault();searchFunkoName($("funkoSearchInput").value)});$("funkoVaultSearch")?.addEventListener("input",renderFunkoVault);$("funkoVaultSort")?.addEventListener("change",renderFunkoVault);$("funkoDetailBack")?.addEventListener("click",()=>funkoGo("funkoVault"));
 
 
-const COMIC_LOCAL_KEY="cardvault.comics.v331.items";
+const COMIC_LOCAL_KEY="cardvault.comics.v333.items";
 let comicItems=[],comicCloudUnsub=null,comicHtml5Scanner=null,comicCoverData=null;
 
 function normalizeComic(x){
@@ -703,7 +703,9 @@ function normalizeComic(x){
     upc:String(x.upc||""),supplement:String(x.supplement||""),
     isbn:String(x.isbn||""),image:String(x.image||""),
     description:String(x.description||""),
-    gcdId:String(x.gcdId||""),gcdUrl:String(x.gcdUrl||""),
+    gcdId:String(x.gcdId||""),gcdUrl:String(x.gcdUrl||""),metronId:String(x.metronId||""),
+    source:String(x.source||x.candidateSource||"GCD"),matchScore:Number(x.matchScore||0),matchReason:String(x.matchReason||""),
+    userCoverImage:String(x.userCoverImage||""),
     value:Number(x.value||0),valueLow:Number(x.valueLow||0),valueHigh:Number(x.valueHigh||0),
     valueConfidence:String(x.valueConfidence||""),priceSource:String(x.priceSource||"Not priced"),
     priceNote:String(x.priceNote||""),
@@ -715,7 +717,14 @@ function saveComicLocal(){try{localStorage.setItem(COMIC_LOCAL_KEY,JSON.stringif
 
 function comicCoverSrc(c){
   if(c?.gcdId)return `/api/comics/cover/${encodeURIComponent(c.gcdId)}`;
-  return c?.image||"/icons/card-placeholder.svg";
+  if(c?.image)return c.image;
+  if(c?.userCoverImage)return c.userCoverImage;
+  return "/icons/card-placeholder.svg";
+}
+function comicCoverFallback(img,c){
+  if(!img)return;
+  if(c?.userCoverImage&&img.src!==c.userCoverImage){img.onerror=null;img.src=c.userCoverImage;return}
+  img.onerror=null;img.src="/icons/card-placeholder.svg";
 }
 function comicMoney(v){return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:2}).format(Number(v||0))}
 function comicGo(id){document.querySelectorAll(".comic-screen").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".comic-tab").forEach(x=>x.classList.toggle("active",x.dataset.comicGo===id));if(id!=="comicScan")stopComicScanner();if(id==="comicHome"||id==="comicVault")renderComicAll();window.scrollTo({top:0,behavior:"smooth"})}
@@ -735,7 +744,7 @@ async function saveComic(item){
   if(currentUser&&firebase?.db){const id=(c.id||c.upc||c.isbn).replace(/[^a-zA-Z0-9._-]/g,"_");await firebase.setDoc(firebase.doc(firebase.db,"users",currentUser.uid,"comicItems",id),c,{merge:true})}
 }
 async function deleteComic(id){const c=comicItems.find(x=>x.id===id);if(!c)return;comicItems=comicItems.filter(x=>x.id!==id);saveComicLocal();renderComicAll();if(currentUser&&firebase?.db)await firebase.deleteDoc(firebase.doc(firebase.db,"users",currentUser.uid,"comicItems",c.id.replace(/[^a-zA-Z0-9._-]/g,"_")));comicGo("comicVault");toast("Comic removed")}
-function comicMarkup(c){return `<button class="comic-item" data-comic-item="${esc(c.id)}" type="button"><img src="${esc(comicCoverSrc(c))}" alt=""><strong>${esc(c.title)}</strong><span>${c.issueNumber?`#${esc(c.issueNumber)} • `:""}${esc(c.publisher||"Comic")}</span><span>${comicMoney(c.value)}</span></button>`}
+function comicMarkup(c){return `<button class="comic-item" data-comic-item="${esc(c.id)}" type="button"><img src="${esc(comicCoverSrc(c))}" alt="" onerror="this.onerror=null;this.src='${esc(c.userCoverImage||'/icons/card-placeholder.svg')}'"><strong>${esc(c.title)}</strong><span>${c.issueNumber?`#${esc(c.issueNumber)} • `:""}${esc(c.publisher||"Comic")}</span><span>${comicMoney(c.value)}</span></button>`}
 function renderComicAll(){
   const total=comicItems.reduce((s,c)=>s+Number(c.value||0),0);$("comicTotalValue").textContent=comicMoney(total);$("comicCount").textContent=comicItems.length;$("comicPublisherCount").textContent=new Set(comicItems.map(c=>c.publisher).filter(Boolean)).size;$("comicKeyCount").textContent=comicItems.filter(c=>c.keyIssue).length;
   const recent=comicItems.slice().sort((a,b)=>b.createdAt-a.createdAt).slice(0,6);$("comicRecent").innerHTML=recent.map(comicMarkup).join("");$("comicRecentEmpty").classList.toggle("hidden",recent.length>0);
@@ -745,7 +754,7 @@ function renderComicVault(){const q=String($("comicVaultSearch")?.value||"").toL
 function bindComicItems(){document.querySelectorAll("[data-comic-item]").forEach(b=>b.onclick=()=>openComicDetail(b.dataset.comicItem))}
 function openComicDetail(id){
   const c=comicItems.find(x=>x.id===id);if(!c)return;
-  $("comicDetailContent").innerHTML=`<div class="comic-detail-card"><img src="${esc(comicCoverSrc(c))}" alt=""><div class="comic-detail-meta"><small>${esc(c.publisher||"Comic")}${c.year?` • ${esc(c.year)}`:""}</small><h1>${esc(c.title)}</h1><p>${esc(c.description||c.series)}</p><div class="comic-detail-list"><div><span>ISSUE</span><strong>${esc(c.issueNumber||"—")}</strong></div><div><span>MARKET VALUE</span><strong>${c.value?comicMoney(c.value):"Not priced"}</strong></div><div><span>VARIANT</span><strong>${esc(c.variant||"—")}</strong></div><div><span>PRINTING</span><strong>${esc(c.printing||"—")}</strong></div><div><span>BARCODE</span><strong>${esc(c.upc||"—")}</strong></div><div><span>GCD ID</span><strong>${esc(c.gcdId||"—")}</strong></div><div><span>ISBN</span><strong>${esc(c.isbn||"—")}</strong></div><div><span>GRADE</span><strong>${esc([c.gradingCompany,c.grade].filter(Boolean).join(" ")||"Raw / ungraded")}</strong></div></div><div class="comic-detail-price-panel"><label>Market value</label><div class="comic-detail-price-row"><input id="comicManualValue" type="number" min="0" step="0.01" value="${c.value||""}" placeholder="Enter value"><button id="comicSaveValue" type="button">Save</button></div><button id="comicRefreshValue" class="comic-secondary wide" type="button" style="margin-top:7px">Refresh Market Value</button><p id="comicPriceNote" class="comic-price-note">${esc(c.priceNote||"GCD cover price is not used as market value. Refresh is optional and uses live web comparables through Card Vault AI.")}</p></div><button id="comicDeleteCurrent" class="comic-delete" type="button">Remove from Comic Vault</button></div></div>`;
+  $("comicDetailContent").innerHTML=`<div class="comic-detail-card"><img src="${esc(comicCoverSrc(c))}" alt="" onerror="this.onerror=null;this.src='${esc(c.userCoverImage||'/icons/card-placeholder.svg')}'"><div class="comic-detail-meta"><small>${esc(c.publisher||"Comic")}${c.year?` • ${esc(c.year)}`:""}</small><h1>${esc(c.title)}</h1><p>${esc(c.description||c.series)}</p><div class="comic-detail-list"><div><span>ISSUE</span><strong>${esc(c.issueNumber||"—")}</strong></div><div><span>MARKET VALUE</span><strong>${c.value?comicMoney(c.value):"Not priced"}</strong></div><div><span>VARIANT</span><strong>${esc(c.variant||"—")}</strong></div><div><span>PRINTING</span><strong>${esc(c.printing||"—")}</strong></div><div><span>BARCODE</span><strong>${esc(c.upc||"—")}</strong></div><div><span>SOURCE</span><strong>${esc(c.source||"GCD")}</strong></div><div><span>GCD / METRON ID</span><strong>${esc(c.gcdId||c.metronId||"—")}</strong></div><div><span>ISBN</span><strong>${esc(c.isbn||"—")}</strong></div><div><span>GRADE</span><strong>${esc([c.gradingCompany,c.grade].filter(Boolean).join(" ")||"Raw / ungraded")}</strong></div></div><div class="comic-detail-price-panel"><label>Market value</label><div class="comic-detail-price-row"><input id="comicManualValue" type="number" min="0" step="0.01" value="${c.value||""}" placeholder="Enter value"><button id="comicSaveValue" type="button">Save</button></div><button id="comicRefreshValue" class="comic-secondary wide" type="button" style="margin-top:7px">Refresh Market Value</button><p id="comicPriceNote" class="comic-price-note">${esc(c.priceNote||"GCD cover price is not used as market value. Refresh is optional and uses live web comparables through Card Vault AI.")}</p></div><button id="comicDeleteCurrent" class="comic-delete" type="button">Remove from Comic Vault</button></div></div>`;
   $("comicSaveValue").onclick=async()=>{c.value=Number($("comicManualValue").value||0);c.priceSource="Manual";c.priceNote="Value entered manually.";await saveComic(c);openComicDetail(c.id);toast("Value saved")};
   $("comicRefreshValue").onclick=()=>refreshComicValue(c);
   $("comicDeleteCurrent").onclick=()=>{if(confirm("Remove this comic from your Vault?"))deleteComic(c.id).catch(()=>toast("Could not remove comic"))};
@@ -770,8 +779,9 @@ async function startComicScanner(){
 }
 async function stopComicScanner(){if(comicHtml5Scanner){try{if(comicHtml5Scanner.isScanning)await comicHtml5Scanner.stop()}catch{}try{await comicHtml5Scanner.clear()}catch{}comicHtml5Scanner=null}$("comicHtml5Reader")?.closest(".comic-scanner-card")?.classList.remove("scanning");$("comicStartScanBtn")?.classList.remove("hidden");$("comicStopScanBtn")?.classList.add("hidden")}
 function renderComicResults(rows){
-  $("comicResults").innerHTML=rows.map((c,i)=>`<article class="comic-result"><img src="${esc(comicCoverSrc(c))}" alt=""><div class="comic-result-meta"><span class="comic-gcd-tag">${c.gcdId?"GCD VERIFIED":"RESULT"}</span><small>${esc(c.publisher||"Comic")}${c.issueNumber?` • #${esc(c.issueNumber)}`:""}</small><strong>${esc(c.title)}</strong><span>${esc(c.year||c.publicationDate||"")}${c.variant?` • ${esc(c.variant)}`:""}</span><span>${c.printing?esc(c.printing):""}</span></div><button data-add-comic="${i}" type="button">${comicItems.some(x=>x.gcdId&&x.gcdId===c.gcdId)?"Saved":"Add"}</button></article>`).join("");
-  document.querySelectorAll("[data-add-comic]").forEach(b=>b.onclick=async()=>{const c=rows[Number(b.dataset.addComic)];await saveComic({...c,createdAt:Date.now()});b.textContent="Saved";clearComicScanFields();toast("Comic added")})
+  $("comicResults").innerHTML=rows.map((c,i)=>{const score=Math.max(0,Math.min(99,Math.round(Number(c.matchScore||0))));const img=comicCoverSrc(c);const fallback=c.userCoverImage||"/icons/card-placeholder.svg";return `<article class="comic-result"><img src="${esc(img)}" data-fallback="${esc(fallback)}" alt="${esc(c.title)} cover"><div class="comic-result-meta"><div class="comic-match-line">${score?`<span class="comic-match-score">${score}% match</span>`:""}<span class="comic-source-badge">${esc(c.source||"GCD")}</span></div><small>${esc(c.publisher||"Comic")}${c.issueNumber?` • #${esc(c.issueNumber)}`:""}</small><strong>${esc(c.title)}</strong><span>${esc(c.year||c.publicationDate||"")}${c.variant?` • ${esc(c.variant)}`:""}</span><span>${c.printing?esc(c.printing):""}</span>${c.matchReason?`<span class="comic-match-reason">${esc(c.matchReason)}</span>`:""}</div><button data-add-comic="${i}" type="button">${comicItems.some(x=>(x.gcdId&&x.gcdId===c.gcdId)||(x.metronId&&x.metronId===c.metronId))?"Saved":"Add"}</button></article>`}).join("");
+  $("comicResults").querySelectorAll("img[data-fallback]").forEach(img=>img.addEventListener("error",()=>{const fb=img.dataset.fallback;if(fb&&img.src!==fb){img.src=fb;img.removeAttribute("data-fallback")}else{img.src="/icons/card-placeholder.svg"}}));
+  document.querySelectorAll("[data-add-comic]").forEach(b=>b.onclick=async()=>{const c=rows[Number(b.dataset.addComic)];await saveComic({...c,userCoverImage:c.userCoverImage||comicCoverData||"",createdAt:Date.now()});b.textContent="Saved";clearComicScanFields();toast("Comic added")})
 }
 function clearComicScanFields(){
   $("comicBarcodeInput").value="";$("comicSupplementInput").value="";$("comicSearchTitle").value="";$("comicSearchIssue").value="";$("comicSearchPublisher").value="";
@@ -804,10 +814,10 @@ async function searchComics(title,issue,publisher){
   $("comicLookupStatus").textContent="Searching Grand Comics Database…";$("comicResults").innerHTML="";
   try{
     const q=new URLSearchParams({title,issue});if(publisher)q.set("publisher",publisher);
-    const r=await fetch(`/api/comics/gcd/search?${q}`),d=await r.json();
+    const r=await fetch(`/api/comics/search-strong?${q}`),d=await r.json();
     if(!r.ok)throw new Error(d.error||"Search failed");
     const rows=(d.items||[]).map(normalizeComic);
-    $("comicLookupStatus").textContent=rows.length?`${rows.length} GCD match${rows.length===1?"":"es"} • choose the exact cover`:"No GCD matches. Check the title/issue or try a cover photo.";
+    $("comicLookupStatus").textContent=rows.length?`${rows.length} comic match${rows.length===1?"":"es"} • choose the exact cover`:"No GCD matches. Check the title/issue or try a cover photo.";
     renderComicResults(rows);
   }catch(err){console.warn(err);$("comicLookupStatus").textContent=err.message||"Comic search failed."}
 }
@@ -817,8 +827,8 @@ async function analyzeComicCover(){
   try{
     const r=await fetch("/api/comics/identify-cover",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:comicCoverData})});
     const d=await r.json();if(!r.ok)throw new Error(d.error||"Cover identification failed");
-    const rows=(d.items||[]).map(normalizeComic);
-    $("comicLookupStatus").textContent=rows.length?`Cover read as ${d.detected?.title||"comic"} ${d.detected?.issueNumber?`#${d.detected.issueNumber}`:""} • choose the exact GCD cover`:"Cover was read, but GCD did not return an exact issue. Try manual title + issue search.";
+    const rows=(d.items||[]).map(x=>normalizeComic({...x,userCoverImage:comicCoverData}));
+    $("comicLookupStatus").textContent=rows.length?`${rows.length} possible cover${rows.length===1?"":"s"} • best visual matches are first`:`The cover was read, but no strong database candidates were found. Try manual title + issue search.`;
     renderComicResults(rows);
   }catch(err){console.warn(err);$("comicLookupStatus").textContent=err.message||"Could not identify cover."}
   finally{btn.disabled=!comicCoverData;btn.textContent="Identify Cover"}

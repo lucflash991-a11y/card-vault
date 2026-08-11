@@ -291,7 +291,7 @@
       </section>
 
       <section id="comicScan" class="comic-screen">
-        <div class="comic-page-title"><small>COVER FIRST</small><h1>Identify the comic.</h1><p>Take a clear picture of the front cover. Card Vault reads the visible title/issue clues, then verifies them against the Grand Comics Database so you can choose the exact real cover.</p></div>
+        <div class="comic-page-title"><small>SMART COVER MATCH</small><h1>Identify the exact cover.</h1><p>Take a clear front-cover photo. Card Vault reads the issue, searches multiple comic sources when available, then visually compares candidate covers against your photo.</p></div>
 
         <section class="comic-cover-scan">
           <label id="comicCoverLabel" class="comic-cover-drop">
@@ -299,7 +299,7 @@
             <div id="comicCoverPreview" class="comic-cover-preview"><span>＋</span><strong>Take / choose cover photo</strong><p>Front cover only. Keep the title and issue number visible.</p></div>
           </label>
           <button id="comicAnalyzeCoverBtn" class="comic-primary wide" type="button" disabled>Identify Cover</button>
-          <p class="comic-cover-note">Cover identification uses one Gemini request only when you tap Identify. GCD provides the real issue metadata and cover images.</p>
+          <p class="comic-cover-note">Your photo is used for identity + visual matching. GCD works automatically; Metron is used too when configured on the server. Your photo is also kept as the fallback cover if a database scan is missing.</p>
         </section>
 
         <div class="comic-divider"><span>BARCODE VERIFICATION / FALLBACK</span></div>
@@ -332,7 +332,7 @@
           <button class="comic-secondary wide" type="submit">Search Grand Comics Database</button>
         </form>
 
-        <div class="comic-api-note"><strong>GCD VERIFIED</strong><span>Manual title/issue search and barcode verification use the Grand Comics Database. Cover-photo identification uses Gemini only to read the cover.</span></div>
+        <div class="comic-api-note"><strong>STRONG MATCHER</strong><span>GCD + optional Metron + visual cover ranking. Results show confidence so you choose the exact issue before saving.</span></div>
         <div id="comicLookupStatus" class="comic-status"></div>
         <div id="comicResults" class="comic-results"></div>
       </section>
@@ -962,7 +962,7 @@
         </div>
 
         <p class="settings-footnote">Platform features live in Discover. Your Home stays personal and clean.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.3.2</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.3.3</p>
       </section>
     </main>
 
@@ -1042,6 +1042,6 @@
 <div id="toast" class="toast hidden" aria-live="polite"></div>
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <script type="module" src="/app.js?v=332"></script>
+  <script type="module" src="/app.js?v=333"></script>
 </body>
 </html>

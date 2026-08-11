@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"3.3.2"});
+  res.json({version:"3.3.3"});
 });
 
 app.use((req,res,next)=>{
@@ -185,7 +185,7 @@ function normalizeGcdIssue(d={}){
     isbn:String(d.isbn||""),
     image:extractCoverUrlFromGcdData(d),
     description:[d.publication_date,d.variant_name].filter(Boolean).join(" • "),
-    value:0,priceSource:"Not priced",priceNote:"GCD metadata verified. Market value has not been estimated."
+    value:0,priceSource:"Not priced",priceNote:"GCD metadata verified. Market value has not been estimated.",source:"GCD"
   };
 }
 
@@ -328,23 +328,141 @@ app.get("/api/comics/gcd/barcode",async(req,res)=>{
     res.json({items:verified,source:"Grand Comics Database",aiUsed:false})
   }catch(err){console.error("Comic barcode verify:",err);res.status(err.code||502).json({error:err.message||"Barcode verification failed"})}
 });
+
+function safeComicImageUrl(v=""){
+  v=String(v||"").trim();
+  if(!v)return "";
+  try{const u=new URL(v);if(!["http:","https:"].includes(u.protocol))return "";return u.toString()}catch{return ""}
+}
+function metronAuthHeader(){
+  const token=String(process.env.METRON_TOKEN||"").trim();
+  if(token)return `Token ${token}`;
+  const user=String(process.env.METRON_USER||"").trim(),pass=String(process.env.METRON_PASS||"");
+  if(user&&pass)return `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}`;
+  return "";
+}
+async function metronJson(url){
+  const auth=metronAuthHeader();if(!auth)return null;
+  const r=await fetch(url,{headers:{"Accept":"application/json","Authorization":auth,"User-Agent":"CardVault/3.3.3"}});
+  if(r.status===401||r.status===403)return null;
+  if(r.status===429){const e=new Error("Metron rate limit reached");e.code=429;throw e}
+  if(!r.ok)return null;
+  return await r.json();
+}
+function normalizeMetronIssue(d={}){
+  const series=d.series||{};const publisher=d.publisher||series.publisher||{};
+  const image=safeComicImageUrl(d.image||d.cover||d.image_url||d.thumbnail||"");
+  const gcdId=String(d.gcd_id||d.gcd||"");
+  return {
+    id:`metron-${d.id||Date.now()}`,metronId:String(d.id||""),gcdId,
+    title:String(series.name||d.series_name||d.title||"Unknown Comic"),series:String(series.name||d.series_name||""),
+    issueNumber:String(d.number||""),publisher:String(publisher.name||d.publisher_name||""),
+    year:String(d.cover_date||d.store_date||d.date||"").match(/\b(19|20)\d{2}\b/)?.[0]||String(series.year_began||""),
+    variant:String(d.variant_name||d.variant||""),printing:String(d.printing||""),
+    upc:String(d.upc||"").replace(/\D/g,""),isbn:String(d.isbn||""),image,
+    description:[d.cover_date,d.store_date].filter(Boolean).join(" • "),value:0,priceSource:"Not priced",
+    priceNote:"Metron/GCD metadata match. Market value not yet estimated.",source:"Metron"
+  };
+}
+async function searchMetronIssues(title,issue,publisher="",year=""){
+  if(!metronAuthHeader())return [];
+  const q=new URLSearchParams({series_name:String(title),number:String(issue)});
+  if(publisher)q.set("publisher_name",String(publisher));
+  if(year)q.set("series_year_began",String(year));
+  let d=await metronJson(`https://metron.cloud/api/issue/?${q}`);let rows=Array.isArray(d?.results)?d.results:[];
+  if(!rows.length&&year){q.delete("series_year_began");d=await metronJson(`https://metron.cloud/api/issue/?${q}`);rows=Array.isArray(d?.results)?d.results:[]}
+  return rows.slice(0,12).map(normalizeMetronIssue);
+}
+function comicDedupeKey(c={}){
+  if(c.gcdId)return `gcd:${c.gcdId}`;
+  const title=String(c.title||c.series||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+  return `${title}|${String(c.issueNumber||"").toLowerCase()}|${String(c.year||"")}|${String(c.variant||"").toLowerCase()}`;
+}
+function mergeComicCandidates(...groups){
+  const map=new Map();
+  for(const c of groups.flat()){
+    if(!c)continue;const k=comicDedupeKey(c);const old=map.get(k);
+    if(!old){map.set(k,c);continue}
+    map.set(k,{...old,...c,image:c.image||old.image,gcdId:c.gcdId||old.gcdId,metronId:c.metronId||old.metronId,source:[old.source,c.source].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(" + ")});
+  }
+  return [...map.values()];
+}
+function metadataComicScore(c,det={}){
+  let s=40;const reasons=[];
+  const norm=v=>String(v||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+  if(norm(c.issueNumber)===norm(det.issueNumber)){s+=25;reasons.push("issue number")}
+  if(det.publisher&&norm(c.publisher).includes(norm(det.publisher))){s+=8;reasons.push("publisher")}
+  if(det.year&&String(c.year)===String(det.year)){s+=8;reasons.push("year")}
+  const titleWords=String(det.title||"").toLowerCase().split(/\s+/).filter(w=>w.length>2);const ct=String(c.title||"").toLowerCase();
+  const hits=titleWords.filter(w=>ct.includes(w)).length;if(titleWords.length){s+=Math.round(15*hits/titleWords.length);if(hits)reasons.push("title")}
+  return {score:Math.min(92,s),reason:reasons.length?`Matched ${reasons.join(", ")}`:"Metadata candidate"};
+}
+async function fetchImageInline(url){
+  url=safeComicImageUrl(url);if(!url)return null;
+  try{const r=await fetch(url,{headers:{"Accept":"image/*","User-Agent":"CardVault/3.3.3"}});if(!r.ok)return null;const ct=r.headers.get("content-type")||"image/jpeg";if(!ct.startsWith("image/"))return null;const b=Buffer.from(await r.arrayBuffer());if(!b.length||b.length>4_000_000)return null;return {mimeType:ct.split(";")[0],data:b.toString("base64")}}catch{return null}
+}
+async function resolveCandidateImage(c){
+  if(c.gcdId){const u=await discoverGcdCoverUrl(c.gcdId);if(u)return u}
+  return safeComicImageUrl(c.image||"");
+}
+async function visualRankComicCandidates(userImage,candidates,model){
+  const picked=[];
+  for(const c of candidates.slice(0,10)){
+    const url=await resolveCandidateImage(c);const im=url?await fetchImageInline(url):null;
+    if(im)picked.push({c,url,im});
+    if(picked.length>=7)break;
+  }
+  const fallback=candidates.map(c=>{const m=metadataComicScore(c,{});return {...c,matchScore:m.score,matchReason:m.reason}});
+  if(!picked.length)return fallback;
+  try{
+    const parts=[{text:`Image 0 is the USER'S photographed comic cover. Images 1-${picked.length} are candidate database covers. Rank how visually likely each candidate is the exact same comic edition/variant/printing as image 0. Compare artwork composition, logo placement, issue/price box, trade dress, characters, colors, variant details, and visible text. Do not reward candidates merely because they are the same series. Return ONLY JSON: {"ranking":[{"candidate":1,"score":95,"reason":"short reason"}]} where score is 0-99.`},{inlineData:{mimeType:userImage.mimeType,data:userImage.data}}];
+    picked.forEach((p,i)=>{parts.push({text:`Candidate ${i+1}: ${p.c.title} #${p.c.issueNumber} ${p.c.variant||""} ${p.c.year||""}`});parts.push({inlineData:{mimeType:p.im.mimeType,data:p.im.data}})});
+    const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{role:"user",parts}],generationConfig:{responseMimeType:"application/json",temperature:.05,maxOutputTokens:900}})});
+    if(!r.ok)return fallback;
+    const d=await r.json();let txt=d?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";txt=txt.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();const parsed=JSON.parse(txt);const ranking=Array.isArray(parsed.ranking)?parsed.ranking:[];
+    const scoreMap=new Map(ranking.map(x=>[Number(x.candidate),{score:Math.max(0,Math.min(99,Number(x.score)||0)),reason:String(x.reason||"Visual comparison").slice(0,140)}]));
+    const ranked=picked.map((p,i)=>{const v=scoreMap.get(i+1)||{score:0,reason:"Visual candidate"};return {...p.c,image:p.url||p.c.image,matchScore:v.score,matchReason:v.reason}});
+    const used=new Set(picked.map(p=>comicDedupeKey(p.c)));for(const c of candidates){if(!used.has(comicDedupeKey(c))){const m=metadataComicScore(c,{});ranked.push({...c,matchScore:m.score,matchReason:m.reason})}}
+    return ranked.sort((a,b)=>(b.matchScore||0)-(a.matchScore||0));
+  }catch(err){console.warn("Comic visual rank failed:",err);return fallback}
+}
+async function strongComicCandidates(det={}){
+  const title=String(det.title||"").trim(),issue=String(det.issueNumber||det.issue||"").trim(),publisher=String(det.publisher||"").trim(),year=String(det.year||"").trim();
+  let gcd=[];try{gcd=await searchGcdIssues(title,issue,publisher,year)}catch{}
+  if(!gcd.length&&year){try{gcd=await searchGcdIssues(title,issue,publisher,"")}catch{}}
+  let met=[];try{met=await searchMetronIssues(title,issue,publisher,year)}catch{}
+  let merged=mergeComicCandidates(gcd.map(x=>({...x,source:x.source||"GCD"})),met);
+  return merged.slice(0,18);
+}
+app.get("/api/comics/search-strong",async(req,res)=>{
+  try{const title=String(req.query.title||"").trim().slice(0,100),issue=String(req.query.issue||"").trim().slice(0,30),publisher=String(req.query.publisher||"").trim().slice(0,60),year=String(req.query.year||"").trim().slice(0,4);if(title.length<2||!issue)return res.status(400).json({error:"Title and issue number are required."});const items=(await strongComicCandidates({title,issueNumber:issue,publisher,year})).map(c=>{const m=metadataComicScore(c,{title,issueNumber:issue,publisher,year});return {...c,matchScore:m.score,matchReason:m.reason}}).sort((a,b)=>(b.matchScore||0)-(a.matchScore||0));res.json({items,metronConfigured:Boolean(metronAuthHeader()),source:"GCD + Metron when configured",aiUsed:false})}catch(err){console.error("Strong comic search:",err);res.status(502).json({error:"Comic search failed."})}
+});
+
 app.post("/api/comics/identify-cover",scanRateLimit,async(req,res)=>{
   try{
     const image=parseDataUrl(req.body?.image);if(!image)return res.status(400).json({error:"Choose a JPG, PNG, or WebP comic cover photo."});
     if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Cover identification is not configured. Use title + issue search instead."});
-    const model=String(process.env.GEMINI_SCAN_MODELS||"gemini-3.1-flash-lite,gemini-2.5-flash").split(",")[0].trim();
+    const models=String(process.env.GEMINI_SCAN_MODELS||"gemini-3.1-flash-lite,gemini-2.5-flash").split(",").map(x=>x.trim()).filter(Boolean);const model=models[0]||"gemini-3.1-flash-lite";
     const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-    const prompt=`Read this physical comic-book FRONT COVER. Return ONLY JSON:
-{"title":"series title","issueNumber":"issue number only","publisher":"publisher if visible/known","year":"4 digit year if reasonably identifiable","variantClues":"short visible cover/variant clues","printing":"printing if visibly stated"}
-Do not invent an issue number. Use empty strings for unknown fields. Focus on the publication identity, not story text.`;
-    const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt},{inlineData:{mimeType:image.mimeType,data:image.data}}]}],generationConfig:{responseMimeType:"application/json",temperature:.05,maxOutputTokens:500}})});
+    const prompt=`Read this physical comic-book FRONT COVER for database matching. Return ONLY JSON:\n{"title":"canonical series title","issueNumber":"issue number only","publisher":"publisher if visible/known","year":"4 digit publication year if reasonably identifiable","variantClues":"specific visual variant clues: cover artist, characters, dominant layout/colors, logo/trade dress, variant label","printing":"printing if visibly stated","alternateTitles":["up to 2 plausible series title variants"]}\nDo not invent an issue number. Empty string if unknown. Do not use story headline text as the series title.`;
+    const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt},{inlineData:{mimeType:image.mimeType,data:image.data}}]}],generationConfig:{responseMimeType:"application/json",temperature:.03,maxOutputTokens:650}})});
     const d=await r.json();if(r.status===429)return res.status(429).json({error:"Free AI quota is temporarily exhausted. Use title + issue search instead."});if(!r.ok)return res.status(502).json({error:"Cover reader could not run."});
     let text=d?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";text=text.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();const detected=JSON.parse(text);
     if(!detected.title||!detected.issueNumber)return res.status(422).json({error:"I could not confidently read the title and issue number. Try a clearer photo or manual search."});
-    let items=await searchGcdIssues(detected.title,detected.issueNumber,detected.publisher,detected.year);
-    const clues=String(detected.variantClues||"").toLowerCase();
-    if(clues&&items.length>1)items=items.sort((a,b)=>{const as=(a.variant+" "+a.coverArtist).toLowerCase(),bs=(b.variant+" "+b.coverArtist).toLowerCase();const aw=clues.split(/\s+/).filter(w=>w.length>3&&as.includes(w)).length,bw=clues.split(/\s+/).filter(w=>w.length>3&&bs.includes(w)).length;return bw-aw});
-    res.json({detected,items:items.slice(0,12),source:"Gemini + Grand Comics Database"})
+    let candidates=await strongComicCandidates(detected);
+    // If exact canonical title produced nothing, try Gemini's alternate title spellings.
+    if(candidates.length<3&&Array.isArray(detected.alternateTitles)){
+      for(const alt of detected.alternateTitles.slice(0,2)){
+        if(!alt||String(alt).toLowerCase()===String(detected.title).toLowerCase())continue;
+        try{candidates=mergeComicCandidates(candidates,await strongComicCandidates({...detected,title:alt}))}catch{}
+      }
+    }
+    if(!candidates.length)return res.json({detected,items:[],metronConfigured:Boolean(metronAuthHeader()),source:"Gemini + comic databases"});
+    let ranked=await visualRankComicCandidates(image,candidates,model);
+    // Blend visual score with metadata sanity so exact issue/year remains meaningful.
+    ranked=ranked.map(c=>{const meta=metadataComicScore(c,detected);const visual=Number(c.matchScore||0);const score=visual?Math.round(visual*.78+meta.score*.22):meta.score;return {...c,matchScore:Math.min(99,score),matchReason:c.matchReason||meta.reason}}).sort((a,b)=>(b.matchScore||0)-(a.matchScore||0));
+    res.json({detected,items:ranked.slice(0,12),metronConfigured:Boolean(metronAuthHeader()),source:"Gemini visual match + GCD + Metron when configured"})
   }catch(err){console.error("Comic cover identify:",err);res.status(500).json({error:"Comic cover identification failed."})}
 });
 app.post("/api/comics/price",async(req,res)=>{
@@ -847,5 +965,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v3.3.2 running on port ${port}`);
+  console.log(`Card Vault v3.3.3 running on port ${port}`);
 });
