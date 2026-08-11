@@ -898,3 +898,7 @@ body.modal-open{
 .comic-required{font-weight:700;color:var(--ink);opacity:.8}
 .comic-barcode-captured{border:1px solid var(--line);background:var(--surface-2);border-radius:12px;padding:9px 10px;margin-top:8px;font-size:8px;line-height:1.45}
 .comic-barcode-captured strong{display:block;font-size:8px;margin-bottom:2px}
+
+/* v3.3.5 eBay comic values */
+.comic-ebay-stats{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.comic-ebay-stats span{font-size:7px;padding:4px 7px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted)}

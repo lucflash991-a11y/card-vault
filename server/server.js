@@ -68,7 +68,7 @@ app.all("/__/firebase/init.json",proxyFirebaseAuth);
 app.use(express.json({limit:"20mb"}));
 app.get("/api/version",(req,res)=>{
   res.setHeader("Cache-Control","no-store");
-  res.json({version:"3.3.4"});
+  res.json({version:"3.3.5"});
 });
 
 app.use((req,res,next)=>{
@@ -343,7 +343,7 @@ function metronAuthHeader(){
 }
 async function metronJson(url){
   const auth=metronAuthHeader();if(!auth)return null;
-  const r=await fetch(url,{headers:{"Accept":"application/json","Authorization":auth,"User-Agent":"CardVault/3.3.4"}});
+  const r=await fetch(url,{headers:{"Accept":"application/json","Authorization":auth,"User-Agent":"CardVault/3.3.5"}});
   if(r.status===401||r.status===403)return null;
   if(r.status===429){const e=new Error("Metron rate limit reached");e.code=429;throw e}
   if(!r.ok)return null;
@@ -411,7 +411,7 @@ function metadataComicScore(c,det={}){
 }
 async function fetchImageInline(url){
   url=safeComicImageUrl(url);if(!url)return null;
-  try{const r=await fetch(url,{headers:{"Accept":"image/*","User-Agent":"CardVault/3.3.4"}});if(!r.ok)return null;const ct=r.headers.get("content-type")||"image/jpeg";if(!ct.startsWith("image/"))return null;const b=Buffer.from(await r.arrayBuffer());if(!b.length||b.length>4_000_000)return null;return {mimeType:ct.split(";")[0],data:b.toString("base64")}}catch{return null}
+  try{const r=await fetch(url,{headers:{"Accept":"image/*","User-Agent":"CardVault/3.3.5"}});if(!r.ok)return null;const ct=r.headers.get("content-type")||"image/jpeg";if(!ct.startsWith("image/"))return null;const b=Buffer.from(await r.arrayBuffer());if(!b.length||b.length>4_000_000)return null;return {mimeType:ct.split(";")[0],data:b.toString("base64")}}catch{return null}
 }
 async function resolveCandidateImage(c){
   if(c.gcdId){const u=await discoverGcdCoverUrl(c.gcdId);if(u)return u}
@@ -451,7 +451,7 @@ async function strongComicCandidates(det={}){
 app.get("/api/comics/metron-status",async(req,res)=>{
   try{
     if(!metronAuthHeader())return res.status(503).json({ok:false,error:"METRON_USER / METRON_PASS missing"});
-    const r=await fetch("https://metron.cloud/api/issue/?series_name=batman&number=1",{headers:{"Accept":"application/json","Authorization":metronAuthHeader(),"User-Agent":"CardVault/3.3.4"}});
+    const r=await fetch("https://metron.cloud/api/issue/?series_name=batman&number=1",{headers:{"Accept":"application/json","Authorization":metronAuthHeader(),"User-Agent":"CardVault/3.3.5"}});
     const remaining=r.headers.get("X-RateLimit-Sustained-Remaining")||"";
     if(r.status===401)return res.status(401).json({ok:false,error:"Metron username/password rejected"});
     if(r.status===429)return res.status(429).json({ok:false,error:"Metron rate limit reached",remaining});
@@ -508,33 +508,197 @@ Rules:
     res.json({detected,items:ranked.slice(0,12),metronConfigured:Boolean(metronAuthHeader()),source:"Gemini visual match + Metron primary + GCD fallback"})
   }catch(err){console.error("Comic cover identify:",err);res.status(500).json({error:"Comic cover identification failed."})}
 });
+
+let ebayAppTokenCache={token:"",expiresAt:0};
+
+function ebayConfigured(){
+  return Boolean(String(process.env.EBAY_CLIENT_ID||"").trim()&&String(process.env.EBAY_CLIENT_SECRET||"").trim());
+}
+async function getEbayAppToken(){
+  if(!ebayConfigured())throw Object.assign(new Error("eBay Production credentials are not configured."),{code:503});
+  if(ebayAppTokenCache.token&&Date.now()<ebayAppTokenCache.expiresAt-5*60*1000)return ebayAppTokenCache.token;
+
+  const clientId=String(process.env.EBAY_CLIENT_ID||"").trim();
+  const secret=String(process.env.EBAY_CLIENT_SECRET||"").trim();
+  const basic=Buffer.from(`${clientId}:${secret}`).toString("base64");
+  const body=new URLSearchParams({
+    grant_type:"client_credentials",
+    scope:"https://api.ebay.com/oauth/api_scope"
+  });
+  const r=await fetch("https://api.ebay.com/identity/v1/oauth2/token",{
+    method:"POST",
+    headers:{
+      "Authorization":`Basic ${basic}`,
+      "Content-Type":"application/x-www-form-urlencoded"
+    },
+    body:body.toString()
+  });
+  const d=await r.json().catch(()=>({}));
+  if(r.status===401||r.status===403)throw Object.assign(new Error("eBay rejected the Production Client ID / Client Secret."),{code:401});
+  if(!r.ok||!d.access_token)throw Object.assign(new Error(`eBay OAuth failed${d.error_description?`: ${d.error_description}`:"."}`),{code:502});
+  const expires=Math.max(300,Number(d.expires_in||7200));
+  ebayAppTokenCache={token:d.access_token,expiresAt:Date.now()+expires*1000};
+  return d.access_token;
+}
+function comicPriceQuery({title="",issueNumber="",publisher="",year="",variant="",printing="",grade=""}={}){
+  const bits=[year,publisher,title,issueNumber?`#${issueNumber}`:"",variant,printing,"comic"].map(x=>String(x||"").trim()).filter(Boolean);
+  return bits.join(" ").replace(/\s+/g," ").slice(0,180);
+}
+function normPriceText(s=""){return String(s||"").toLowerCase().replace(/[’']/g,"").replace(/[^a-z0-9#.+-]+/g," ").replace(/\s+/g," ").trim()}
+function issuePatternMatches(text,issue){
+  issue=String(issue||"").trim().replace(/^#/,"");
+  if(!issue)return true;
+  const t=String(text||"");
+  const escIssue=issue.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  const patterns=[
+    new RegExp(`#\\s*${escIssue}(?![0-9])`,"i"),
+    new RegExp(`\\bissue\\s*#?\\s*${escIssue}(?![0-9])`,"i"),
+    new RegExp(`\\bno\\.?\\s*${escIssue}(?![0-9])`,"i")
+  ];
+  return patterns.some(p=>p.test(t));
+}
+function comicListingScore(item,identity){
+  const raw=String(item?.title||"");
+  const t=normPriceText(raw);
+  let score=0;
+
+  const titleTokens=normPriceText(identity.title).split(" ").filter(x=>x.length>2&&!["the","and","comic","comics"].includes(x));
+  const titleHits=titleTokens.filter(x=>t.includes(x)).length;
+  if(titleTokens.length)score+=Math.round(38*titleHits/titleTokens.length);
+  if(issuePatternMatches(raw,identity.issueNumber))score+=30;
+  else score-=22;
+
+  const pubTokens=normPriceText(identity.publisher).split(" ").filter(x=>x.length>2);
+  if(pubTokens.some(x=>t.includes(x)))score+=6;
+  if(identity.year&&t.includes(String(identity.year)))score+=4;
+
+  const variantTokens=normPriceText(identity.variant).split(" ").filter(x=>x.length>3&&!["cover","variant","edition"].includes(x));
+  if(variantTokens.length){
+    const vh=variantTokens.filter(x=>t.includes(x)).length;
+    score+=Math.min(12,vh*4);
+  }
+
+  const printingTokens=normPriceText(identity.printing).split(" ").filter(x=>x.length>2);
+  if(printingTokens.some(x=>t.includes(x)))score+=6;
+
+  const rawGrade=normPriceText(identity.grade||"raw");
+  const isSlab=/\b(cgc|cbcs|pgx|graded|slab|9\.[0-9]|10\.0)\b/i.test(raw);
+  const wantsSlab=rawGrade&&!["raw","ungraded",""].includes(rawGrade);
+  if(wantsSlab){
+    if(isSlab)score+=8;else score-=8;
+  }else if(isSlab)score-=28;
+
+  if(/\b(lot|bundle|set of|reader lot|run of|issues? [0-9]+[-–][0-9]+|complete run)\b/i.test(raw))score-=45;
+  if(/\bfacsimile\b/i.test(raw)&&!/facsimile/i.test(identity.variant||identity.printing||""))score-=45;
+  if(/\breprint\b/i.test(raw)&&!/reprint/i.test(identity.variant||identity.printing||""))score-=20;
+  if(/\bposter|print|art print|signed photo|digital\b/i.test(raw))score-=35;
+
+  return score;
+}
+function percentile(sorted,p){
+  if(!sorted.length)return 0;
+  const i=(sorted.length-1)*p,lo=Math.floor(i),hi=Math.ceil(i);
+  if(lo===hi)return sorted[lo];
+  return sorted[lo]+(sorted[hi]-sorted[lo])*(i-lo);
+}
+function roundedMoney(n){return Math.round(Number(n||0)*100)/100}
+
+async function ebayComicMarket(identity){
+  const token=await getEbayAppToken();
+  const q=comicPriceQuery(identity);
+  const params=new URLSearchParams({q,limit:"50",filter:"buyingOptions:{FIXED_PRICE}"});
+  const r=await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?${params}`,{
+    headers:{
+      "Authorization":`Bearer ${token}`,
+      "X-EBAY-C-MARKETPLACE-ID":"EBAY_US",
+      "Accept":"application/json"
+    }
+  });
+  const d=await r.json().catch(()=>({}));
+  if(r.status===401){
+    ebayAppTokenCache={token:"",expiresAt:0};
+    throw Object.assign(new Error("eBay authorization expired. Try Refresh again."),{code:401});
+  }
+  if(r.status===429)throw Object.assign(new Error("eBay API rate limit reached. Try again later."),{code:429});
+  if(!r.ok)throw Object.assign(new Error(d?.errors?.[0]?.message||`eBay search failed (${r.status}).`),{code:502});
+
+  const raw=Array.isArray(d.itemSummaries)?d.itemSummaries:[];
+  const scored=raw.map(item=>{
+    const price=Number(item?.price?.value||0);
+    return {item,price,score:comicListingScore(item,identity)};
+  }).filter(x=>Number.isFinite(x.price)&&x.price>0&&x.score>=48)
+    .sort((a,b)=>b.score-a.score);
+
+  // Keep the strongest matches, then remove severe price outliers.
+  let comps=scored.slice(0,24);
+  if(comps.length>=5){
+    const vals=comps.map(x=>x.price).sort((a,b)=>a-b);
+    const q1=percentile(vals,.25),q3=percentile(vals,.75),iqr=q3-q1;
+    const lower=Math.max(.5,q1-1.5*iqr),upper=q3+1.5*iqr;
+    comps=comps.filter(x=>x.price>=lower&&x.price<=upper);
+  }
+  if(!comps.length){
+    return {value:0,low:0,high:0,median:0,confidence:"Low",comparablesUsed:0,
+      note:`No strong live eBay matches found for ${identity.title} #${identity.issueNumber}. Try refining the variant/printing or enter a value manually.`,
+      source:"eBay market estimate",query:q};
+  }
+
+  const vals=comps.map(x=>x.price).sort((a,b)=>a-b);
+  const median=percentile(vals,.5),low=percentile(vals,.25),high=percentile(vals,.75);
+  const avgScore=comps.reduce((s,x)=>s+x.score,0)/comps.length;
+  let confidence="Low";
+  if(comps.length>=8&&avgScore>=68)confidence="High";
+  else if(comps.length>=4&&avgScore>=57)confidence="Medium";
+
+  return {
+    value:roundedMoney(median),
+    median:roundedMoney(median),
+    low:roundedMoney(low),
+    high:roundedMoney(high),
+    confidence,
+    comparablesUsed:comps.length,
+    note:`Based on ${comps.length} matched live eBay fixed-price listing${comps.length===1?"":"s"}. This is an asking-price market estimate, not confirmed sold history.`,
+    source:"eBay market estimate",
+    query:q
+  };
+}
+
+app.get("/api/comics/ebay-status",async(req,res)=>{
+  try{
+    if(!ebayConfigured())return res.status(503).json({ok:false,error:"EBAY_CLIENT_ID / EBAY_CLIENT_SECRET missing"});
+    await getEbayAppToken();
+    res.json({ok:true,environment:"production"});
+  }catch(err){res.status(err.code||502).json({ok:false,error:err.message||"eBay connection failed"})}
+});
+
 app.post("/api/comics/price",async(req,res)=>{
   try{
-    const {title="",issueNumber="",publisher="",year="",variant="",printing="",grade="Raw"}=req.body||{};
-    if(!title||!issueNumber)return res.status(400).json({error:"Missing comic identity"});
-    if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Live market pricing is not configured."});
-    const key=`comic|${title}|${issueNumber}|${publisher}|${year}|${variant}|${printing}|${grade}`.toLowerCase(),cached=priceMemoryCache.get(key);if(cached&&Date.now()-cached.savedAt<24*60*60*1000)return res.json({...cached.data,cached:true});
-    const model=process.env.GEMINI_MODEL||"gemini-3.1-flash-lite",endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-    const prompt=`You are Card Vault's OPTIONAL live comic-market estimator.
-Search the live web for the exact comic issue and the closest legitimate comparables.
-Title: ${title}
-Issue: #${issueNumber}
-Publisher: ${publisher}
-Year: ${year}
-Variant/Cover: ${variant}
-Printing: ${printing}
-Grade/condition: ${grade}
-Prefer recent sold evidence when available. Do not use original cover price as market value. Do not mix different variants, printings, facsimiles, lots, slabs, or grades. If only asking prices exist, lower confidence. Never invent sales.
-Return ONLY JSON:
-{"value":25.00,"low":18.00,"high":32.00,"confidence":"High|Medium|Low","note":"short basis","comparablesUsed":4}`;
-    const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt}]}],tools:[{google_search:{}}],generationConfig:{temperature:.1}})});
-    const d=await r.json();if(r.status===429)return res.status(429).json({error:"Live market pricing is cooling down. Enter a value manually or try later."});if(!r.ok)return res.status(502).json({error:"Live market refresh could not run."});
-    let text=d?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";text=text.trim().replace(/^```json\s*/i,"").replace(/```$/,"").trim();const m=text.match(/\{[\s\S]*\}/);if(!m)return res.status(502).json({error:"Market refresh returned an unreadable result."});const p=JSON.parse(m[0]);
-    const value=Number(p.value),low=Number(p.low),high=Number(p.high);if(![value,low,high].every(Number.isFinite))return res.status(502).json({error:"Market refresh returned invalid numbers."});
-    const result={value:Math.round(value*100)/100,low:Math.round(Math.min(low,high)*100)/100,high:Math.round(Math.max(low,high)*100)/100,confidence:["High","Medium","Low"].includes(p.confidence)?p.confidence:"Low",note:String(p.note||"Live web-comparable estimate.").slice(0,220),source:"Live AI market estimate"};
-    priceMemoryCache.set(key,{savedAt:Date.now(),data:result});res.json(result)
-  }catch(err){console.error("Comic price:",err);res.status(500).json({error:"Comic market refresh failed."})}
+    const identity={
+      title:String(req.body?.title||"").trim(),
+      issueNumber:String(req.body?.issueNumber||"").trim(),
+      publisher:String(req.body?.publisher||"").trim(),
+      year:String(req.body?.year||"").trim(),
+      variant:String(req.body?.variant||"").trim(),
+      printing:String(req.body?.printing||"").trim(),
+      grade:String(req.body?.grade||"Raw").trim(),
+      gradingCompany:String(req.body?.gradingCompany||"").trim()
+    };
+    if(!identity.title||!identity.issueNumber)return res.status(400).json({error:"Missing comic title or issue number."});
+    if(!ebayConfigured())return res.status(503).json({error:"eBay Production credentials are not configured in Render."});
+
+    const key=`ebaycomic|${identity.title}|${identity.issueNumber}|${identity.publisher}|${identity.year}|${identity.variant}|${identity.printing}|${identity.grade}`.toLowerCase();
+    const cached=priceMemoryCache.get(key);
+    if(cached&&Date.now()-cached.savedAt<6*60*60*1000)return res.json({...cached.data,cached:true});
+
+    const result=await ebayComicMarket(identity);
+    priceMemoryCache.set(key,{savedAt:Date.now(),data:result});
+    res.json(result);
+  }catch(err){
+    console.error("Comic eBay price:",err);
+    res.status(err.code||500).json({error:err.message||"Comic eBay market refresh failed."});
+  }
 });
+
 
 const funkoLookupCache=new Map();
 const FUNKO_CACHE_MS=24*60*60*1000;
@@ -1008,5 +1172,5 @@ app.use((req,res)=>{
 });
 
 app.listen(port,"0.0.0.0",()=>{
-  console.log(`Card Vault v3.3.4 running on port ${port}`);
+  console.log(`Card Vault v3.3.5 running on port ${port}`);
 });

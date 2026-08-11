@@ -1,4 +1,4 @@
-# Card Vault v3.3.4 — Metron Primary Comics
+# Card Vault v3.3.5 — eBay Comic Values
 
 Card Vault started as a sports-card scanner and collection tracker. v3.0 begins the transition into a **multi-collectible platform** while keeping every collectible category separated.
 
@@ -684,7 +684,7 @@ v3.0.0 does **not** require new Firestore rules beyond the rules already used by
 After deploying v3.0.2, verify:
 
 ```text
-BUILD v3.3.4
+BUILD v3.3.5
 ```
 
 in Card Vault.
@@ -898,3 +898,70 @@ Cover-photo matching can use two Gemini calls: one to read the comic identity an
 - Candidate covers are visually compared with the uploaded cover photo.
 - Metron cover images are preferred when available.
 - No new Firebase rules.
+
+
+## v3.3.5 — eBay Comic Values
+
+Card Vault Comics can now calculate a current market estimate from live eBay Production listings.
+
+### Render variables
+
+```text
+EBAY_CLIENT_ID
+EBAY_CLIENT_SECRET
+```
+
+Both remain server-side. The browser never receives the Client Secret.
+
+### OAuth
+
+The server automatically mints an eBay Application access token using the client-credentials flow and reuses it in memory until near expiration.
+
+### Pricing method
+
+Card Vault searches eBay Browse API live fixed-price listings for the identified comic.
+
+It builds the search from:
+- series/title
+- issue number
+- publisher
+- year
+- variant
+- printing
+- grade
+
+Then it:
+- scores listings for identity similarity
+- requires a strong issue/title match
+- penalizes lots and bundles
+- excludes slabs when pricing a raw comic
+- penalizes facsimiles/reprints unless the saved comic says it is one
+- removes severe price outliers
+- uses the median of the remaining listings as current value
+- uses the 25th–75th percentile as the displayed market range
+- assigns High / Medium / Low confidence
+- stores only Card Vault's calculated value/range/count, not a persistent copy of raw eBay listing data
+
+### Important pricing label
+
+eBay Browse API returns live marketplace listings, not confirmed sold-history comps. v3.3.5 therefore labels the result:
+
+`eBay market estimate`
+
+The UI explicitly tells the user it is based on current asking prices.
+
+### Automatic value
+
+After adding a newly identified comic, Card Vault attempts one non-blocking eBay pricing lookup. If it succeeds, the Comic Vault value updates automatically.
+
+Users can also tap:
+
+`Refresh from eBay`
+
+at any time in Comic Detail.
+
+### Cache
+
+Identical pricing requests are cached server-side for 6 hours to reduce eBay API usage and unnecessary OAuth traffic.
+
+No Firebase rule changes are required.
