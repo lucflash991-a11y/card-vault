@@ -242,7 +242,7 @@
       </section>
       <section id="funkoScan" class="funko-screen">
         <div class="funko-page-title"><small>BARCODE FIRST</small><h1>Scan the box.</h1><p>Point the camera at the UPC/EAN barcode on the bottom of the Funko box.</p></div>
-        <div class="funko-scanner-card"><video id="funkoBarcodeVideo" playsinline muted></video><div id="funkoScannerPlaceholder" class="funko-scanner-placeholder"><span>▥</span><strong>Barcode Scanner</strong><p>Uses your phone camera locally. Reading the barcode itself costs nothing.</p></div><div class="funko-scan-actions"><button id="funkoStartScanBtn" class="funko-primary wide" type="button">Start Camera Scanner</button><button id="funkoStopScanBtn" class="funko-secondary hidden" type="button">Stop Camera</button></div><p id="funkoBarcodeSupport" class="funko-support-note"></p></div>
+        <div class="funko-scanner-card"><video id="funkoBarcodeVideo" playsinline muted></video><div id="funkoHtml5Reader" class="funko-html5-reader hidden"></div><div id="funkoScannerPlaceholder" class="funko-scanner-placeholder"><span>▥</span><strong>Barcode Scanner</strong><p>Uses your phone camera locally. Reading the barcode itself costs nothing.</p></div><div class="funko-scan-actions"><button id="funkoStartScanBtn" class="funko-primary wide" type="button">Start Camera Scanner</button><button id="funkoStopScanBtn" class="funko-secondary hidden" type="button">Stop Camera</button></div><p id="funkoBarcodeSupport" class="funko-support-note"></p></div>
         <div class="funko-divider"><span>OR ENTER BARCODE</span></div>
         <form id="funkoBarcodeForm" class="funko-form"><label>UPC / EAN<input id="funkoBarcodeInput" inputmode="numeric" autocomplete="off" placeholder="e.g. 889698123456"></label><button class="funko-primary wide" type="submit">Look Up Barcode</button></form>
         <div class="funko-divider"><span>OR SEARCH BY NAME</span></div>
@@ -852,7 +852,7 @@
         </div>
 
         <p class="settings-footnote">Platform features live in Discover. Your Home stays personal and clean.</p>
-        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.0.2</p>
+        <p class="settings-footnote" style="text-align:center;font-weight:800">BUILD v3.2.1</p>
       </section>
     </main>
 
@@ -931,6 +931,7 @@
 <section id="counterOfferModal" class="sheet-modal hidden" aria-hidden="true"><div class="sheet-backdrop" data-close-counter></div><div class="sheet-card"><div class="sheet-grabber"></div><div class="sheet-title-row"><div><small>COUNTER OFFER</small><h2>Make a counter</h2></div><button class="back-circle" data-close-counter type="button">×</button></div><div class="money-input"><span>$</span><input id="counterCashAmount" type="number" min="0" step="0.01" placeholder="Cash amount"></div><label class="offer-note-label">Note<textarea id="counterNote" rows="3" maxlength="300" placeholder="Add a note"></textarea></label><button id="submitCounterBtn" class="primary-button" type="button"><span>Send counter</span><span>↗</span></button></div></section>
 <div id="toast" class="toast hidden" aria-live="polite"></div>
 
-  <script type="module" src="/app.js?v=302"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script type="module" src="/app.js?v=321"></script>
 </body>
 </html>

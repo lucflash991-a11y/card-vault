@@ -1,10 +1,10 @@
-# Card Vault v3.0.2 — Funko Barcode Vault
+# Card Vault v3.2.1 — iPhone Funko Barcode Hotfix
 
 Card Vault started as a sports-card scanner and collection tracker. v3.0 begins the transition into a **multi-collectible platform** while keeping every collectible category separated.
 
 ## Current Build
 
-**v3.0.2**
+**v3.2.1**
 
 Built from the stable **v2.4.2 Trade / Sale Flow Hotfix** baseline.
 
@@ -684,7 +684,11 @@ v3.0.0 does **not** require new Firestore rules beyond the rules already used by
 After deploying v3.0.2, verify:
 
 ```text
-BUILD v3.0.2
+BUILD v3.2.1
 ```
 
 in Card Vault.
+
+
+## v3.2.1 — iPhone/Safari Barcode Hotfix
+Adds Html5-Qrcode as an automatic fallback when Safari does not expose BarcodeDetector. UPC-A, UPC-E, EAN-13 and EAN-8 stay local and use 0 Gemini calls.

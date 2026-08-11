@@ -1,0 +1,1 @@
+Adds Html5-Qrcode fallback for Safari/iPhone. No Firebase rule changes required.
