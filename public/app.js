@@ -1212,7 +1212,11 @@ $("saveDetailBtn").addEventListener("click",async()=>{
       grade:$("dGrade").value.trim(),paid:Number($("dPaid").value||0),value:newValue,collection:$("dCollection").value.trim(),tags:$("dTags").value.split(",").map(x=>x.trim()).filter(Boolean),public:Boolean($("cardPublicToggle")?.checked),listingStatus:$("cardListingStatus")?.value||"not-listed",forTrade:["trade","both"].includes($("cardListingStatus")?.value),forSale:["sale","both"].includes($("cardListingStatus")?.value),askPrice:Number($("cardAskPrice")?.value||0),notes:$("dNotes").value.trim()
     };
     if(Math.abs(newValue-Number(c.value||0))>.001)updated.priceHistory=pushPriceHistory(c,newValue,"Manual edit");
-    await persistCard(updated);toast("Card updated");openDetails(c.id);
+    await persistCard(updated);
+    if(currentUser&&firebase?.db&&platformProfile){
+      try{await syncPlatformProfile()}catch(syncErr){console.warn("Public market sync:",syncErr)}
+    }
+    toast("Card updated");openDetails(c.id);
   }catch{toast("Could not save changes");}
   finally{btn.disabled=false}
 });
@@ -1646,7 +1650,11 @@ document.querySelectorAll("[data-discover-tab]").forEach(b=>b.addEventListener("
 document.querySelectorAll("[data-switch-discover]").forEach(b=>b.addEventListener("click",()=>setDiscoverTab(b.dataset.switchDiscover)));
 $("discoverSearch")?.addEventListener("input",renderDiscover);
 document.querySelectorAll("[data-market-filter]").forEach(b=>b.addEventListener("click",()=>{marketFilter=b.dataset.marketFilter;document.querySelectorAll("[data-market-filter]").forEach(x=>x.classList.toggle("active",x===b));renderMarket()}));
-$("cardListingStatus")?.addEventListener("change",updateListingHelp);$("marketPlayerFilter")?.addEventListener("input",renderMarket);$("marketSportFilter")?.addEventListener("change",renderMarket);$("marketConditionFilter")?.addEventListener("change",renderMarket);$("marketMinPrice")?.addEventListener("input",renderMarket);$("marketMaxPrice")?.addEventListener("input",renderMarket);$("marketSort")?.addEventListener("change",renderMarket);document.querySelectorAll("[data-public-tab]").forEach(b=>b.addEventListener("click",()=>setPublicTab(b.dataset.publicTab)));document.querySelectorAll("[data-close-offer-detail]").forEach(x=>x.addEventListener("click",closeOfferDetail));document.querySelectorAll("[data-close-counter]").forEach(x=>x.addEventListener("click",closeCounterOffer));$("submitCounterBtn")?.addEventListener("click",()=>submitCounter().catch(e=>{console.warn(e);toast("Could not send counter")}));$("markAllNotificationsRead")?.addEventListener("click",()=>markAllNotificationsRead().catch(console.warn));
+$("cardListingStatus")?.addEventListener("change",()=>{
+  updateListingHelp();
+  const status=$("cardListingStatus")?.value||"not-listed";
+  if(["sale","trade","both"].includes(status)&&$("cardPublicToggle"))$("cardPublicToggle").checked=true;
+});$("marketPlayerFilter")?.addEventListener("input",renderMarket);$("marketSportFilter")?.addEventListener("change",renderMarket);$("marketConditionFilter")?.addEventListener("change",renderMarket);$("marketMinPrice")?.addEventListener("input",renderMarket);$("marketMaxPrice")?.addEventListener("input",renderMarket);$("marketSort")?.addEventListener("change",renderMarket);document.querySelectorAll("[data-public-tab]").forEach(b=>b.addEventListener("click",()=>setPublicTab(b.dataset.publicTab)));document.querySelectorAll("[data-close-offer-detail]").forEach(x=>x.addEventListener("click",closeOfferDetail));document.querySelectorAll("[data-close-counter]").forEach(x=>x.addEventListener("click",closeCounterOffer));$("submitCounterBtn")?.addEventListener("click",()=>submitCounter().catch(e=>{console.warn(e);toast("Could not send counter")}));$("markAllNotificationsRead")?.addEventListener("click",()=>markAllNotificationsRead().catch(console.warn));
 $("openTradeInboxBtn")?.addEventListener("click",openTradeInbox);document.querySelectorAll("[data-close-offer]").forEach(x=>x.addEventListener("click",closeOfferModal));document.querySelectorAll("[data-offer-type]").forEach(b=>b.addEventListener("click",()=>{activeOfferType=b.dataset.offerType;renderOfferUI()}));$("sendOfferBtn")?.addEventListener("click",()=>sendOffer().catch(e=>{console.warn(e);toast("Could not send offer")}));
 document.querySelectorAll("[data-close-trade-inbox]").forEach(x=>x.addEventListener("click",closeTradeInbox));document.querySelectorAll("[data-trade-inbox-tab]").forEach(b=>b.addEventListener("click",()=>{tradeInboxTab=b.dataset.tradeInboxTab;renderTradeInbox()}));
 document.querySelectorAll("[data-close-chat]").forEach(x=>x.addEventListener("click",closeChat));$("chatSendBtn")?.addEventListener("click",()=>sendChat());$("chatInput")?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat()}});
@@ -1690,9 +1698,14 @@ async function startCloudCards(){
   if(!currentUser||!firebase?.db)return;
   const col=firebase.collection(firebase.db,"users",currentUser.uid,"cards");
   await migrateLocalToCloud(col);
-  unsubscribeCards=firebase.onSnapshot(col,snap=>{
+  let repairedMarketMirror=false;
+  unsubscribeCards=firebase.onSnapshot(col,async snap=>{
     cards=dedupeCards(snap.docs.map(d=>hydrateLocalImages(normalizeCard({id:d.id,...d.data()}))));
     renderAll();
+    if(!repairedMarketMirror&&platformProfile){
+      repairedMarketMirror=true;
+      try{await syncPublicCards()}catch(err){console.warn("Market mirror repair:",err)}
+    }
   },()=>toast("Cloud sync paused"));
 }
 async function migrateLocalToCloud(col){
